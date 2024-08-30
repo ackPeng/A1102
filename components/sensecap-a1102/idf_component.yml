@@ -1,0 +1,8 @@
+version: "1.0.0"
+description: Board Support Package for SenseCAP A1102
+
+targets:
+  - esp32c3
+
+dependencies:
+  idf: ">=5.2.0"

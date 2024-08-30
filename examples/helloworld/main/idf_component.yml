@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+dependencies:
+  idf: ">=5.2"
+  
+  sensecap-a1102:
+    override_path: "../../../components/sensecap-a1102"
