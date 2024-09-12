@@ -1,5 +1,7 @@
-idf_component_register(SRCS "a1102.c"
-                    INCLUDE_DIRS "."
+idf_component_register(
+    SRCS 
+        "sscma_client_monitor.c"
+    INCLUDE_DIRS
+        "")
 
-                    REQUIRES esp-modbus esp_event json 
-)
+# spiffs_create_partition_image(storage ../spiffs FLASH_IN_PROJECT)

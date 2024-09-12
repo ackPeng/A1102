@@ -1,6 +1,7 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  espressif/esp-modbus: "^1.0.15"
-  ## Required IDF version
-  idf:
-    version: ">=4.1.0"
+  espressif/esp-modbus: "*"
+  idf: ">=5.0"
+
+  sscma_client:
+    override_path: "../../../components/sscma_client"
