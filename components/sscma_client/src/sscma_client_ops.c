@@ -231,9 +231,6 @@ static void sscma_client_process(void *arg)
             }
             sscma_client_read(client, client->rx_buffer.data + client->rx_buffer.pos, rlen);
             client->rx_buffer.pos += rlen;
-            client->rx_buffer.data[client->rx_buffer.pos] = 0;
-
-            // strip the '\0' at the front
             for (int i = 0; i < client->rx_buffer.pos; i++)
             {
                 if (client->rx_buffer.data[i] != '\0')
@@ -241,11 +238,12 @@ static void sscma_client_process(void *arg)
                     if (i != 0)
                     {
                         memmove(client->rx_buffer.data, client->rx_buffer.data + i, client->rx_buffer.pos - i);
+                        client->rx_buffer.pos -= i;
                     }
                     break;
                 }
             }
-            
+            client->rx_buffer.data[client->rx_buffer.pos] = 0;
             while ((suffix = strnstr(client->rx_buffer.data, RESPONSE_SUFFIX, client->rx_buffer.pos)) != NULL)
             {
                 if ((prefix = strnstr(client->rx_buffer.data, RESPONSE_PREFIX, suffix - client->rx_buffer.data)) != NULL)
@@ -410,17 +408,17 @@ static void sscma_client_process(void *arg)
                                 sscma_client_reply_clear(&reply);
                             }
                         }
+                        else
+                        {
+                            ESP_LOGW(TAG, "Invalid reply: %s cc", reply.data);
+                            sscma_client_reply_clear(&reply);
+                        }
                     }
                 }
                 else
                 {
                     // discard this reply
                     ESP_LOGW(TAG, "Invalid reply: %d/%d", client->rx_buffer.pos, client->rx_buffer.len);
-                    for (int i = 0; i < client->rx_buffer.pos; i++)
-                    {
-                        printf("%02X ", client->rx_buffer.data[i]);
-                    }
-                    printf("\n");
                     memmove(client->rx_buffer.data, suffix + RESPONSE_SUFFIX_LEN, client->rx_buffer.pos - (suffix - client->rx_buffer.data) - RESPONSE_PREFIX_LEN);
                     client->rx_buffer.pos -= suffix - client->rx_buffer.data + RESPONSE_SUFFIX_LEN;
                     client->rx_buffer.data[client->rx_buffer.pos] = 0;
@@ -440,7 +438,6 @@ esp_err_t sscma_client_new(const sscma_client_io_handle_t io, const sscma_client
     sscma_client_handle_t client = NULL;
     ESP_GOTO_ON_FALSE(io && config && ret_client, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument");
     client = (sscma_client_handle_t)malloc(sizeof(struct sscma_client_t));
-    memset(client, 0, sizeof(struct sscma_client_t));
     ESP_GOTO_ON_FALSE(client, ESP_ERR_NO_MEM, err, TAG, "no mem for sscma client");
     client->io = io;
     client->inited = false;
@@ -998,7 +995,20 @@ esp_err_t sscma_client_get_model(sscma_client_handle_t client, sscma_client_mode
                             // new format
                             else if (cJSON_GetObjectItem(root, "model_id") != NULL)
                             {
-                                fetch_string_from_object(root, "model_id", &client->model.uuid);
+                                cJSON *model_id = cJSON_GetObjectItem(root, "model_id");
+                                if (cJSON_IsString(model_id))
+                                {
+                                    fetch_string_from_object(root, "model_id", &client->model.uuid);
+                                }
+                                else if (cJSON_IsNumber(model_id))
+                                {
+                                    if (client->model.uuid != NULL)
+                                    {
+                                        free(client->model.uuid);
+                                    }
+                                    client->model.uuid = __malloc(32);
+                                    sprintf(client->model.uuid, "%d", model_id->valueint);
+                                }
                                 fetch_string_from_object(root, "model_name", &client->model.name);
                                 fetch_string_from_object(root, "version", &client->model.ver);
                                 fetch_string_from_object(root, "url", &client->model.url);

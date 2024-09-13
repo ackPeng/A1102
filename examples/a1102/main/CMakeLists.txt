@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS 
-        "sscma_client_monitor.c"
+        "main.c"
     INCLUDE_DIRS
         "")
 

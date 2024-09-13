@@ -23,23 +23,25 @@
 
 #include "sscma_client_commands.h"
 
+#define TAG "SenseCAP A1102"
+
 static sscma_client_io_handle_t io = NULL;
 static sscma_client_handle_t client = NULL;
 static void *mbc_slave_handler = NULL;
 mb_communication_info_t comm_info;
 mb_param_info_t reg_info;
-bool is_captured = false;
+volatile bool is_captured = false;
 
-#define MB_READ_MASK       (MB_EVENT_INPUT_REG_RD | MB_EVENT_HOLDING_REG_RD | MB_EVENT_DISCRETE_RD | MB_EVENT_COILS_RD)
-#define MB_WRITE_MASK      (MB_EVENT_HOLDING_REG_WR | MB_EVENT_COILS_WR)
-#define MB_READ_WRITE_MASK (MB_READ_MASK | MB_WRITE_MASK)
+#define MB_PAR_INFO_GET_TOUT (10) // Timeout for get parameter info
+#define MB_READ_MASK         (MB_EVENT_INPUT_REG_RD | MB_EVENT_HOLDING_REG_RD | MB_EVENT_DISCRETE_RD | MB_EVENT_COILS_RD)
+#define MB_WRITE_MASK        (MB_EVENT_HOLDING_REG_WR | MB_EVENT_COILS_WR)
+#define MB_READ_WRITE_MASK   (MB_READ_MASK | MB_WRITE_MASK)
 
-int32_t reg[10] = { 0 };
+volatile int32_t reg[10] = { 0 };
 float magic = 0;
 
 void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
 {
-    // ESP_LOGI("event", "on_event: %s", reply->data);
     vPortEnterCritical();
     sscma_client_box_t *boxes = NULL;
     int box_count = 0;
@@ -54,7 +56,6 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
             for (int i = 0; i < box_count && i < 9; i++)
             {
                 reg[i] = boxes[i].target * 1000 + boxes[i].score * 10;
-                // ESP_LOGI("event", "target: %d, score: %d", boxes[i].target, boxes[i].score);
             }
         }
         free(boxes);
@@ -69,7 +70,6 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
             for (int i = 0; i < class_count && i < 9; i++)
             {
                 reg[i] = classes[i].target * 1000 + classes[i].score * 10;
-                // ESP_LOGI("event", "target: %d, score: %d", classes[i].target, classes[i].score);
             }
         }
         free(classes);
@@ -79,19 +79,51 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
     return;
 }
 
-void on_log(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
-{
-    if (reply->len >= 100)
-    {
-        strcpy(&reply->data[100 - 4], "...");
-    }
-    // Note: reply is automatically recycled after exiting the function.
-    printf("log: %s\n", reply->data);
-}
+void on_log(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx) { }
 
 void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
 {
-    printf("on_connect\n");
+    sscma_client_info_t *info;
+    if (sscma_client_get_info(client, &info, true) == ESP_OK)
+    {
+        printf("ID: %s\n", (info->id != NULL) ? info->id : "NULL");
+        printf("Name: %s\n", (info->name != NULL) ? info->name : "NULL");
+        printf("Hardware Version: %s\n", (info->hw_ver != NULL) ? info->hw_ver : "NULL");
+        printf("Software Version: %s\n", (info->sw_ver != NULL) ? info->sw_ver : "NULL");
+        printf("Firmware Version: %s\n", (info->fw_ver != NULL) ? info->fw_ver : "NULL");
+    }
+    else
+    {
+        printf("get info failed\n");
+    }
+    sscma_client_model_t *model;
+    if (sscma_client_get_model(client, &model, true) == ESP_OK)
+    {
+        printf("ID: %d\n", model->id ? model->id : -1);
+        printf("UUID: %s\n", model->uuid ? model->uuid : "N/A");
+        reg[9] = 1000000000 + atoi(model->uuid) * 1000 + 101;
+        printf("Name: %s\n", model->name ? model->name : "N/A");
+        printf("Version: %s\n", model->ver ? model->ver : "N/A");
+        printf("URL: %s\n", model->url ? model->url : "N/A");
+        printf("Checksum: %s\n", model->checksum ? model->checksum : "N/A");
+        printf("Classes:\n");
+        if (model->classes[0] != NULL)
+        {
+            for (int i = 0; model->classes[i] != NULL; i++)
+            {
+                printf("  - %s\n", model->classes[i]);
+            }
+        }
+        else
+        {
+            printf("  N/A\n");
+        }
+    }
+    else
+    {
+        ESP_LOGE("ai", "get model failed\n");
+    }
+    sscma_client_invoke(client, -1, false, false);
 }
 
 void app_main(void)
@@ -138,10 +170,6 @@ void app_main(void)
     };
     int intr_alloc_flags = 0;
 
-#if CONFIG_UART_ISR_IN_IRAM
-    intr_alloc_flags = ESP_INTR_FLAG_IRAM;
-#endif
-
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 8 * 1024, 0, 0, NULL, intr_alloc_flags));
     ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, 21, 20, -1, -1));
@@ -170,77 +198,34 @@ void app_main(void)
     }
 
     sscma_client_init(client);
-    sscma_client_info_t *info;
-    if (sscma_client_get_info(client, &info, true) == ESP_OK)
-    {
-        printf("ID: %s\n", (info->id != NULL) ? info->id : "NULL");
-        printf("Name: %s\n", (info->name != NULL) ? info->name : "NULL");
-        printf("Hardware Version: %s\n", (info->hw_ver != NULL) ? info->hw_ver : "NULL");
-        printf("Software Version: %s\n", (info->sw_ver != NULL) ? info->sw_ver : "NULL");
-        printf("Firmware Version: %s\n", (info->fw_ver != NULL) ? info->fw_ver : "NULL");
-    }
-    else
-    {
-        printf("get info failed\n");
-    }
-    sscma_client_model_t *model;
-    if (sscma_client_get_model(client, &model, true) == ESP_OK)
-    {
-        printf("ID: %d\n", model->id ? model->id : -1);
-        reg[9] = 1000000000 + atoi(model->uuid) * 1000 + 125;
-        printf("UUID: %s\n", model->uuid ? model->uuid : "N/A");
-        printf("Name: %s\n", model->name ? model->name : "N/A");
-        printf("Version: %s\n", model->ver ? model->ver : "N/A");
-        printf("URL: %s\n", model->url ? model->url : "N/A");
-        printf("Checksum: %s\n", model->checksum ? model->checksum : "N/A");
-        printf("Classes:\n");
-        if (model->classes[0] != NULL)
-        {
-            for (int i = 0; model->classes[i] != NULL; i++)
-            {
-                printf("  - %s\n", model->classes[i]);
-            }
-        }
-        else
-        {
-            printf("  N/A\n");
-        }
-    }
-    else
-    {
-        printf("get model failed\n");
-    }
-
-    // if (sscma_client_invoke(client, 1, false, false) != ESP_OK)
-    // {
-    //     printf("sample failed\n");
-    // }
-
-    // sscma_client_reply_t reply;
-    // char cmd[128] = { 0 };
-    // snprintf(cmd, sizeof(cmd), CMD_PREFIX CMD_AT_ACTION CMD_SET "%s" CMD_SUFFIX, "\"((max_score(target,0)>=20)&&save_jpeg()||led(0)\"");
-
-    // sscma_client_request(client, cmd, &reply, false, CMD_WAIT_DELAY);
-
-    sscma_client_invoke(client, -1, false, false);
-
-    ESP_LOGI("MB", "Listening for events...");
 
     for (int i = 0; i < 9; i++)
     {
         reg[i] = -1000;
     }
 
+    ESP_LOGI("MB", "Listening for events...");
+
     while (1)
     {
-        // (void)mbc_slave_check_event(MB_READ_WRITE_MASK);
-        // ESP_ERROR_CHECK_WITHOUT_ABORT(mbc_slave_get_param_info(&reg_info, 10));
-        // // Filter events and process them accordingly
-        // if (reg_info.type & (MB_EVENT_INPUT_REG_RD | MB_EVENT_HOLDING_REG_RD))
-        // {
-        //     // ESP_LOGI("MB", "INPUT READ (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,
-        //     //    (uint32_t)reg_info.address, (unsigned)reg_info.size);
-        // }
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        (void)mbc_slave_check_event(MB_READ_WRITE_MASK);
+        ESP_ERROR_CHECK_WITHOUT_ABORT(mbc_slave_get_param_info(&reg_info, MB_PAR_INFO_GET_TOUT));
+        if (reg_info.type & (MB_EVENT_HOLDING_REG_WR | MB_EVENT_HOLDING_REG_RD))
+        {
+            // // Get parameter information from parameter queue
+            // ESP_LOGI(TAG, "HOLDING  (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,
+            //     (uint32_t)reg_info.address, (unsigned)reg_info.size);
+            if (reg_info.mb_offset == 0x1000)
+            {
+                sscma_client_invoke(client, -1, false, false);
+            }
+            else if (reg_info.mb_offset == 0x8002)
+            {
+                for (int i = 0; i < 9; i++)
+                {
+                    reg[i] = -1000;
+                }
+            }
+        }
     }
 }
