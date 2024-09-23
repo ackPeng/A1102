@@ -80,6 +80,24 @@ typedef struct
 
 typedef struct
 {
+    char *ssid; /* !< SSID */
+    char *password; /* !< Password */
+} sscma_client_wifi_t;
+
+typedef struct
+{
+    char *username; /* !< SSID */
+    char *password; /* !< Password */
+    char *address; /* !< Host */
+    char *port; /* !< Port */
+    char *client_id; /* !< Client ID */
+    char *use_ssl; /* !< SSL */
+    int  port1; 
+    int  use_ssl1;
+} sscma_client_mqtt_t;
+
+typedef struct
+{
     uint16_t x;
     uint16_t y;
     uint16_t w;

@@ -1,44 +1,4 @@
-#include <dirent.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-
-#include "driver/uart.h"
-#include "driver/i2c.h"
-#include "driver/gpio.h"
-#include "driver/spi_master.h"
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_timer.h"
-#include "esp_log.h"
-#include "esp_check.h"
-
-#include "mbcontroller.h"
-
-#include "sscma_client_io.h"
-#include "sscma_client_ops.h"
-
-#include "sscma_client_commands.h"
-
-#define TAG "SenseCAP A1102"
-
-static sscma_client_io_handle_t io = NULL;
-static sscma_client_handle_t client = NULL;
-static void *mbc_slave_handler = NULL;
-mb_communication_info_t comm_info;
-mb_param_info_t reg_info;
-volatile bool is_captured = false;
-
-#define MB_PAR_INFO_GET_TOUT (10) // Timeout for get parameter info
-#define MB_READ_MASK         (MB_EVENT_INPUT_REG_RD | MB_EVENT_HOLDING_REG_RD | MB_EVENT_DISCRETE_RD | MB_EVENT_COILS_RD)
-#define MB_WRITE_MASK        (MB_EVENT_HOLDING_REG_WR | MB_EVENT_COILS_WR)
-#define MB_READ_WRITE_MASK   (MB_READ_MASK | MB_WRITE_MASK)
-
-volatile int32_t reg[10] = { 0 };
-float magic = 0;
+#include "main.h"
 
 void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
 {
@@ -74,16 +34,115 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
         }
         free(classes);
     }
-    is_captured = true;
+        is_captured = true;
     vPortExitCritical();
     return;
 }
 
 void on_log(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx) { }
 
+esp_err_t read_wifi_config(sscma_client_wifi_t *wifi)
+{
+    nvs_handle_t my_handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &my_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
+        return ret;
+    }
+
+    size_t required_size;
+    ret = nvs_get_str(my_handle, NVS_KEY_SSID, NULL, &required_size);
+    if (ret == ESP_OK) {
+        wifi->ssid = malloc(required_size);
+        ret = nvs_get_str(my_handle, NVS_KEY_SSID, wifi->ssid, &required_size);
+    } else {
+        wifi->ssid = NULL;
+    }
+
+    ret = nvs_get_str(my_handle, NVS_KEY_PASSWORD, NULL, &required_size);
+    if (ret == ESP_OK) {
+        wifi->password = malloc(required_size);
+        ret = nvs_get_str(my_handle, NVS_KEY_PASSWORD, wifi->password, &required_size);
+    } else {
+        wifi->password = NULL;
+    }
+
+    nvs_close(my_handle);
+    return ESP_OK;
+}
+
+esp_err_t read_mqtt_config(sscma_client_mqtt_t *mqtt)
+{
+    nvs_handle_t my_handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &my_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
+        return ret;
+    }
+
+    size_t required_size;
+    ret = nvs_get_str(my_handle, NVS_KEY_MQTT_USERNAME, NULL, &required_size);
+    if (ret == ESP_OK) {
+        mqtt->username = malloc(required_size);
+        ret = nvs_get_str(my_handle, NVS_KEY_MQTT_USERNAME, mqtt->username, &required_size);
+    } else {
+        mqtt->username = NULL;
+    }
+
+    ret = nvs_get_str(my_handle, NVS_KEY_MQTT_PASSWORD, NULL, &required_size);
+    if (ret == ESP_OK) {
+        mqtt->password = malloc(required_size);
+        ret = nvs_get_str(my_handle, NVS_KEY_MQTT_PASSWORD, mqtt->password, &required_size);
+    } else {
+        mqtt->password = NULL;
+    }
+
+    ret = nvs_get_str(my_handle, NVS_KEY_MQTT_ADDRESS, NULL, &required_size);
+    if (ret == ESP_OK) {
+        mqtt->address = malloc(required_size);
+        ret = nvs_get_str(my_handle, NVS_KEY_MQTT_ADDRESS, mqtt->address, &required_size);
+    } else {
+        mqtt->address = NULL;
+    }
+
+    //ret = nvs_get_str(my_handle, NVS_KEY_MQTT_PORT, NULL, &required_size);
+    // if (ret == ESP_OK) {
+    //     mqtt->port = malloc(required_size);
+    //     ret = nvs_get_str(my_handle, NVS_KEY_MQTT_PORT, mqtt->port, &required_size);
+    // } else {
+    //     mqtt->port = NULL;
+    // }
+
+    ret = nvs_get_i32(my_handle, NVS_KEY_MQTT_PORT1, &mqtt->port1);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Port1 read successfully: %d", mqtt->port1);
+    } else {
+        mqtt->port1 = 0; 
+    }
+    
+    ret = nvs_get_i32(my_handle, NVS_KEY_MQTT_USE_SSL1, &mqtt->use_ssl1);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Port1 read successfully: %d", mqtt->use_ssl1);
+    } else {
+        mqtt->use_ssl1 = 0; 
+    }    
+
+    ret = nvs_get_str(my_handle, NVS_KEY_MQTT_CLIENT_ID, NULL, &required_size);
+    if (ret == ESP_OK) {
+        mqtt->client_id = malloc(required_size);
+        ret = nvs_get_str(my_handle, NVS_KEY_MQTT_CLIENT_ID, mqtt->client_id, &required_size);
+    } else {
+        mqtt->client_id = NULL;
+    }
+
+    nvs_close(my_handle);
+    return ESP_OK;
+}
+
+
 void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
 {
-    sscma_client_info_t *info;
+    sscma_client_info_t *info = NULL;
     if (sscma_client_get_info(client, &info, true) == ESP_OK)
     {
         printf("ID: %s\n", (info->id != NULL) ? info->id : "NULL");
@@ -96,7 +155,8 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
     {
         printf("get info failed\n");
     }
-    sscma_client_model_t *model;
+
+    sscma_client_model_t *model = NULL;
     if (sscma_client_get_model(client, &model, true) == ESP_OK)
     {
         printf("ID: %d\n", model->id ? model->id : -1);
@@ -119,22 +179,361 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
             printf("  N/A\n");
         }
     }
+
+    sscma_client_wifi_t wifi;
+    memset(&wifi, 0, sizeof(wifi));
+    if (get_wifi_config(client, &wifi) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "SSID: %s", wifi.ssid == NULL ? "NULL" : wifi.ssid);
+        ESP_LOGI(TAG, "Password: %s", wifi.password == NULL ? "NULL" : wifi.password);
+
+        nvs_handle_t my_handle;
+        esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &my_handle);
+
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
+            } else {
+            ESP_LOGI(TAG, "NVS handle opened successfully");
+
+            const char *ssid = wifi.ssid ? wifi.ssid : "null";
+            const char *password = wifi.password ? wifi.password : "null";
+
+            ret = nvs_set_str(my_handle, NVS_KEY_SSID, ssid);
+            ESP_ERROR_CHECK(ret);
+
+            ret = nvs_set_str(my_handle, NVS_KEY_PASSWORD, password);
+            ESP_ERROR_CHECK(ret);
+
+            ret = nvs_commit(my_handle);
+            ESP_ERROR_CHECK(ret);
+
+            nvs_close(my_handle);
+        }
+    }
+
+    sscma_client_mqtt_t mqtt;
+    memset(&mqtt, 0, sizeof(mqtt));
+    if (get_mqtt_config(client, &mqtt) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "00Username: %s", mqtt.username == NULL ? "NULL" : mqtt.username);
+        ESP_LOGI(TAG, "Password: %s", mqtt.password == NULL ? "NULL" : mqtt.password);
+        ESP_LOGI(TAG, "Address: %s", mqtt.address == NULL ? "NULL" : mqtt.address);
+        //ESP_LOGI(TAG, "Port: %s", mqtt.port == NULL ? "NULL" : mqtt.port);
+        ESP_LOGI(TAG, "Client ID: %s", mqtt.client_id == NULL ? "NULL" : mqtt.client_id);
+        //ESP_LOGI(TAG, "Use SSL: %s", mqtt.use_ssl == NULL ? "NULL" : mqtt.use_ssl);
+        ESP_LOGI(TAG, "Port1: %d", mqtt.port1 == 0 ? 0 : mqtt.port1);
+        ESP_LOGI(TAG, "use_ssl1: %d", mqtt.use_ssl1 == 0 ? 0 : mqtt.use_ssl1);
+
+        nvs_handle_t my_handle;
+        esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &my_handle);
+
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
+        } else {
+            ESP_LOGI(TAG, "NVS handle opened successfully");
+
+            const char *username = mqtt.username ? mqtt.username : "null";
+            const char *password = mqtt.password ? mqtt.password : "null";
+            const char *address = mqtt.address ? mqtt.address : "null";
+            //const char *port = mqtt.port ? mqtt.port : "null";
+            const char *client_id = mqtt.client_id ? mqtt.client_id : "null";
+            //const char *use_ssl = mqtt.use_ssl ? mqtt.use_ssl : "null";
+            const int *port1 = mqtt.port1 ? mqtt.port1 : "null";
+            const int *use_ssl1 = mqtt.use_ssl1? mqtt.use_ssl1 : "null";
+
+            ret = nvs_set_str(my_handle, NVS_KEY_MQTT_USERNAME, username);
+            ESP_ERROR_CHECK(ret);
+            ESP_LOGI(TAG, "NVS handle opened successfully");
+            ret = nvs_set_str(my_handle, NVS_KEY_MQTT_PASSWORD, password);
+            ESP_ERROR_CHECK(ret);
+
+            ret = nvs_set_str(my_handle, NVS_KEY_MQTT_ADDRESS, address);
+            ESP_ERROR_CHECK(ret);
+
+            // ret = nvs_set_str(my_handle, NVS_KEY_MQTT_PORT, port);
+            // ESP_ERROR_CHECK(ret);
+
+            ret = nvs_set_i32(my_handle, NVS_KEY_MQTT_PORT1, port1);
+            ESP_ERROR_CHECK(ret);
+
+            ret = nvs_set_str(my_handle, NVS_KEY_MQTT_CLIENT_ID, client_id);
+            ESP_ERROR_CHECK(ret);
+
+            // ret = nvs_set_str(my_handle, NVS_KEY_MQTT_USE_SSL, use_ssl);
+            // ESP_ERROR_CHECK(ret);
+
+            ret = nvs_set_i32(my_handle, NVS_KEY_MQTT_USE_SSL1, use_ssl1);
+            ESP_ERROR_CHECK(ret);
+
+            ret = nvs_commit(my_handle);
+            ESP_ERROR_CHECK(ret);
+
+            nvs_close(my_handle);
+        }
+    }
     else
     {
-        ESP_LOGE("ai", "get model failed\n");
+        ESP_LOGE(TAG, "get mqtt config failed\n");
     }
+
     sscma_client_invoke(client, -1, false, false);
+}
+
+static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
+    {
+        esp_wifi_connect();
+    }
+    else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
+    {
+        if (s_retry_num < CONFIG_ESP_MAXIMUM_RETRY)
+        {
+            esp_wifi_connect();
+            s_retry_num++;
+            ESP_LOGI(TAG, "retry to connect to the AP");
+        }
+        else
+        {
+            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+        }
+        ESP_LOGI(TAG, "connect to the AP fail");
+    }
+    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
+    {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
+{
+    esp_mqtt_event_handle_t event = event_data;
+    switch (event->event_id)
+    {
+        case MQTT_EVENT_CONNECTED:
+            ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+            xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
+            int msg_id = esp_mqtt_client_subscribe(mqtt_client, mqtt_rx_topic, 0);
+            ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
+            break;
+        case MQTT_EVENT_DISCONNECTED:
+            ESP_LOGW(TAG, "MQTT_EVENT_DISCONNECTED");
+            xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
+            break;
+        case MQTT_EVENT_SUBSCRIBED:
+            ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+            break;
+        case MQTT_EVENT_UNSUBSCRIBED:
+            ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+            break;
+        case MQTT_EVENT_PUBLISHED:
+            ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+            break;
+        case MQTT_EVENT_DATA:
+            ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+            sscma_client_write(client, event->data, event->data_len);
+            break;
+        case MQTT_EVENT_ERROR:
+            ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
+            break;
+        default:
+            ESP_LOGI(TAG, "Other event id:%d", event->event_id);
+            break;
+    }
+}
+
+void wifi_init_sta()
+{
+    s_wifi_event_group = xEventGroupCreate();
+    s_mqtt_event_group = xEventGroupCreate();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
+    assert(netif);
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL));
+
+    sscma_client_wifi_t wifi;
+    memset(&wifi, 0, sizeof(wifi));
+    if (read_wifi_config(&wifi) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "readSSID: %s", wifi.ssid == NULL ? "NULL" : wifi.ssid);
+        ESP_LOGI(TAG, "Password: %s", wifi.password == NULL ? "NULL" : wifi.password);
+    }
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = "",
+            .password = ""
+        },
+    };
+    strncpy((char *)wifi_config.sta.ssid, wifi.ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, wifi.password, sizeof(wifi_config.sta.password) - 1);
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "wifi_init_sta finished.");
+
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+
+    if (bits & WIFI_CONNECTED_BIT)
+    {
+        ESP_LOGI(TAG, "connected to ap SSID: %s", wifi.ssid);
+    }
+    else if (bits & WIFI_FAIL_BIT)
+    {
+        ESP_LOGI(TAG, "Failed to connect to SSID: %s", wifi.ssid);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "UNEXPECTED EVENT");
+    }
+    vEventGroupDelete(s_wifi_event_group);
+}
+
+
+// void mqtt_intialize()
+// {
+//     sscma_client_mqtt_t mqtt;
+//     memset(&mqtt, 0, sizeof(mqtt));
+//     if (read_mqtt_config(&mqtt) == ESP_OK)
+//     {
+//         ESP_LOGI(TAG, "11Username: %s", mqtt.username == NULL ? "NULL" : mqtt.username);
+//         ESP_LOGI(TAG, "11Password: %s", mqtt.password == NULL ? "NULL" : mqtt.password);
+//         ESP_LOGI(TAG, "Address: %s", mqtt.address == NULL ? "NULL" : mqtt.address);
+//         ESP_LOGI(TAG, "Port: %s", mqtt.port == NULL ? "NULL" : mqtt.port);
+//         ESP_LOGI(TAG, "Client ID: %s", mqtt.client_id == NULL ? "NULL" : mqtt.client_id);
+//         ESP_LOGI(TAG, "Use SSL: %s", mqtt.use_ssl == NULL ? "NULL" : mqtt.use_ssl);
+//     }
+//     uint8_t mac[8] = { 0 };
+//     esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
+
+//     snprintf(mqtt_client_id, sizeof(mqtt_client_id), "watcher-%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+//     snprintf(mqtt_tx_topic, sizeof(mqtt_tx_topic), "sscma/v0/%s/tx", mqtt_client_id);
+//     snprintf(mqtt_rx_topic, sizeof(mqtt_rx_topic), "sscma/v0/%s/rx", mqtt_client_id);
+
+//     ESP_LOGI(TAG, "MQTT client id: %s", mqtt_client_id);
+
+//     esp_mqtt_client_config_t mqtt_cfg = { .broker.address.uri = CONFIG_MQTT_BROKER,
+//         .credentials.client_id = mqtt_client_id,
+// #ifdef CONFIG_MQTT_CREADENTIAL_USERNAME
+//         .credentials.username = CONFIG_MQTT_CREADENTIAL_USERNAME,
+// #endif
+// #ifdef CONFIG_MQTT_CREADENTIAL_PASSWORD
+//         .credentials.authentication.password = CONFIG_MQTT_CREADENTIAL_PASSWORD
+// #endif
+//     };
+//     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+//     esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
+//     esp_mqtt_client_start(mqtt_client);
+// }
+
+void mqtt_initialize()
+{
+    sscma_client_mqtt_t mqtt;
+    memset(&mqtt, 0, sizeof(mqtt));
+    if (read_mqtt_config(&mqtt) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "Username: %s", mqtt.username == NULL ? "NULL" : mqtt.username);
+        ESP_LOGI(TAG, "Password: %s", mqtt.password == NULL ? "NULL" : mqtt.password);
+        ESP_LOGI(TAG, "Address: %s", mqtt.address == NULL ? "NULL" : mqtt.address);
+        //ESP_LOGI(TAG, "Port: %s", mqtt.port == NULL ? "NULL" : mqtt.port);
+        ESP_LOGI(TAG, "Client ID: %s", mqtt.client_id == NULL ? "NULL" : mqtt.client_id);
+        //ESP_LOGI(TAG, "Use SSL: %s", mqtt.use_ssl == NULL ? "NULL" : mqtt.use_ssl);
+        ESP_LOGI(TAG, "port: %d", mqtt.port1 == 0 ? 0 : mqtt.port1);
+        ESP_LOGI(TAG, "use_ssl: %d", mqtt.use_ssl1 == 0 ? 0 : mqtt.use_ssl1);
+    }
+
+    uint8_t mac[8] = { 0 };
+    esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
+
+    snprintf(mqtt_client_id, sizeof(mqtt_client_id), "watcher-%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    snprintf(mqtt_tx_topic, sizeof(mqtt_tx_topic), "sscma/v0/%s/tx", mqtt_client_id);
+    snprintf(mqtt_rx_topic, sizeof(mqtt_rx_topic), "sscma/v0/%s/rx", mqtt_client_id);
+
+    ESP_LOGI(TAG, "MQTT client id: %s", mqtt_client_id);
+
+    esp_mqtt_client_config_t mqtt_cfg = {
+        .broker.address.uri = mqtt.address,
+        .broker.address.port = mqtt.port1,
+        .credentials.client_id = mqtt_client_id,
+        .credentials.username = mqtt.username,
+        .credentials.authentication.password = mqtt.password,
+        .broker.verification.certificate = mqtt.use_ssl ? "path/to/certificate" : NULL 
+    };
+
+    mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
+    esp_mqtt_client_start(mqtt_client);
+}
+
+void nvs_modbus()
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    nvs_handle_t my_handle;
+    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &my_handle);
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "NVS handle opened successfully");
+    }
+    
+    modbus_address = 1; // 默认地址
+    ret = nvs_get_u16(my_handle, NVS_KEY_ADDR, &modbus_address);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        modbus_address = 1;
+        ret = nvs_set_u16(my_handle, NVS_KEY_ADDR, modbus_address);
+        ESP_ERROR_CHECK(ret);
+    } else {
+        ESP_ERROR_CHECK(ret);
+    }
+
+    modbus_baud = 115200;
+    ret = nvs_get_u16(my_handle, NVS_KEY_BAUD, &modbus_baud);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        modbus_baud = 115200;
+        ret = nvs_set_u16(my_handle, NVS_KEY_BAUD, modbus_baud);
+        ESP_ERROR_CHECK(ret);
+    } else {
+        ESP_ERROR_CHECK(ret);
+    }
+
+    ret = nvs_commit(my_handle);
+    ESP_ERROR_CHECK(ret);
+    
 }
 
 void app_main(void)
 {
+    nvs_modbus();
+    wifi_init_sta();
+    //mqtt_intialize();
+    mqtt_initialize();
+    
     ESP_LOGI("main", "start");
     mbc_slave_init(MB_PORT_SERIAL_SLAVE, &mbc_slave_handler);
 
     comm_info.mode = MB_MODE_RTU;
-    comm_info.slave_addr = 1;
+    comm_info.slave_addr = modbus_address;//modbus address
     comm_info.port = UART_NUM_0; // uart 0
-    comm_info.baudrate = 115200;
+    comm_info.baudrate = modbus_baud;
     comm_info.parity = MB_PARITY_NONE;
     ESP_ERROR_CHECK(mbc_slave_setup((void *)&comm_info));
 
@@ -154,6 +553,25 @@ void app_main(void)
     holding_reg_area.address = (void *)&(reg[9]);
     holding_reg_area.size = sizeof(int32_t);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));
+
+    //reg[10] = 22;
+    holding_reg_area.type = MB_PARAM_HOLDING;//modbus地址
+    holding_reg_area.start_offset = 0x0000;
+    holding_reg_area.address = (void *)&(modbus_address);
+    holding_reg_area.size = sizeof(int32_t);
+    ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));
+    
+    // holding_reg_area.type = MB_PARAM_HOLDING;//波特率
+    // holding_reg_area.start_offset = 0x0001;
+    // holding_reg_area.address = (void *)&(reg[10]);
+    // holding_reg_area.size = sizeof(int32_t);
+    // ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));    
+
+    // holding_reg_area.type = MB_PARAM_HOLDING;//设备版本
+    // holding_reg_area.start_offset = 0x0001;
+    // holding_reg_area.address = (void *)&(reg[11]);
+    // holding_reg_area.size = sizeof(int32_t);
+    // ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));  
 
     ESP_ERROR_CHECK(mbc_slave_start());
 
@@ -225,6 +643,16 @@ void app_main(void)
                 {
                     reg[i] = -1000;
                 }
+            }
+            else if (reg_info.mb_offset == 0x0000)
+            {
+                 ESP_LOGI(TAG, "HOLDING  (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,(uint32_t)reg_info.address, (unsigned)reg_info.size);
+                 if (reg_info.type != modbus_address)
+                 {
+                    //modbus_address = reg_info.type;
+                    //ESP_ERROR_CHECK(mbc_slave_setup((void *)&comm_info));
+                 }
+                 
             }
         }
     }

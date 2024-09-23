@@ -438,6 +438,7 @@ esp_err_t sscma_client_new(const sscma_client_io_handle_t io, const sscma_client
     sscma_client_handle_t client = NULL;
     ESP_GOTO_ON_FALSE(io && config && ret_client, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument");
     client = (sscma_client_handle_t)malloc(sizeof(struct sscma_client_t));
+    memset(client, 0, sizeof(struct sscma_client_t));
     ESP_GOTO_ON_FALSE(client, ESP_ERR_NO_MEM, err, TAG, "no mem for sscma client");
     client->io = io;
     client->inited = false;
@@ -1142,6 +1143,65 @@ esp_err_t sscma_client_get_sensor(sscma_client_handle_t client, sscma_client_sen
                     sensor->opt_id = get_int_from_object(o_sensor, "opt_id");
                     fetch_string_from_object(o_sensor, "opt_detail", &(sensor->opt_detail));
                 }
+            }
+        }
+        sscma_client_reply_clear(&reply);
+    }
+
+    return ret;
+}
+
+esp_err_t get_wifi_config(sscma_client_handle_t client, sscma_client_wifi_t *WIFI)//asdasdwifi
+{
+    esp_err_t ret = ESP_OK;
+    sscma_client_reply_t reply;
+
+    ESP_RETURN_ON_ERROR(sscma_client_request(client, CMD_PREFIX CMD_AT_WIFI CMD_QUERY CMD_SUFFIX, &reply, true, CMD_WAIT_DELAY), TAG, "set wifi");
+
+    if (reply.payload != NULL) {
+        int code = get_int_from_object(reply.payload, "code");
+        ret = SSCMA_CLIENT_CMD_ERROR_CODE(code);
+        if (ret == ESP_OK) {
+            cJSON *data = cJSON_GetObjectItem(reply.payload, "data");
+            if (data != NULL) {
+                cJSON *config = cJSON_GetObjectItem(data, "config");
+                if (config != NULL) {
+                    fetch_string_from_object(config, "name", &(WIFI->ssid));
+                    fetch_string_from_object(config, "password", &(WIFI->password));
+                }
+            }
+        }
+        sscma_client_reply_clear(&reply);
+    }
+
+    return ret;
+}
+
+esp_err_t get_mqtt_config(sscma_client_handle_t client, sscma_client_mqtt_t *MQTT)//asdasdwifi
+{
+    esp_err_t ret = ESP_OK;
+    sscma_client_reply_t reply;
+
+    ESP_RETURN_ON_ERROR(sscma_client_request(client, CMD_PREFIX CMD_AT_MQTTSERVER CMD_QUERY CMD_SUFFIX, &reply, true, CMD_WAIT_DELAY), TAG, "set mqtt");
+
+    if (reply.payload != NULL) {
+        int code = get_int_from_object(reply.payload, "code");
+        ret = SSCMA_CLIENT_CMD_ERROR_CODE(code);
+        if (ret == ESP_OK) {
+            cJSON *data = cJSON_GetObjectItem(reply.payload, "data");
+            if (data != NULL) {
+                cJSON *config = cJSON_GetObjectItem(data, "config");
+                if (config != NULL) {
+                    fetch_string_from_object(config, "client_id", &(MQTT->client_id));
+                    fetch_string_from_object(config, "address", &(MQTT->address));
+                    //fetch_string_from_object(config, "port", &(MQTT->port));
+                    fetch_string_from_object(config, "username", &(MQTT->username));
+                    fetch_string_from_object(config, "password", &(MQTT->password));
+                    //fetch_string_from_object(config, "use_ssl", &(MQTT->use_ssl));
+                    MQTT->port1 = get_int_from_object(config, "port");
+                    MQTT->use_ssl1 = get_int_from_object(config, "use_ssl");
+                }
+                
             }
         }
         sscma_client_reply_clear(&reply);

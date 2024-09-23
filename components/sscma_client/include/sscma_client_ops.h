@@ -206,6 +206,25 @@ esp_err_t sscma_client_set_sensor(sscma_client_handle_t client, int id, int opt_
 esp_err_t sscma_client_get_sensor(sscma_client_handle_t client, sscma_client_sensor_t *sensor);
 
 /**
+ * @brief Get wifi
+ * @param[in] client SCCMA client handle
+ * @param[in] WIFI Copyer to sscma_client_wifi_t
+ * @return
+ * - ESP_OK on success
+ */
+esp_err_t get_wifi_config(sscma_client_handle_t client, sscma_client_wifi_t *WIFI);//asdasdwifi
+
+
+/**
+ * @brief Get mqtt
+ * @param[in] client SCCMA client handle
+ * @param[in] mqtt MQTT
+ * @return
+ * - ESP_OK on success
+ */
+esp_err_t get_mqtt_config(sscma_client_handle_t client, sscma_client_mqtt_t *MQTT);
+
+/**
  * @brief SSCMA client sample
  * @param[in] client SCCMA client handle
  * @param[in] times Number of times
