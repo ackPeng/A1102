@@ -2,6 +2,32 @@
 
 void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
 {
+     EventBits_t mqttConnectBits = xEventGroupGetBits(s_mqtt_event_group);
+    if (mqttConnectBits & MQTT_CONNECTED_BIT)
+    {
+        int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, reply->data, reply->len, 0, 0);
+        if (msg_id < 0)
+        {
+            ESP_LOGE(TAG, "Failed to publish: %d", msg_id);
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Publish success: %d", reply->len);
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+        }
+        return;
+        
+    }
+
+    char *img = NULL;
+    int img_size = 0;
+    if (sscma_utils_fetch_image_from_reply(reply, &img, &img_size) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "image_size: %d\n", img_size);
+        free(img);
+    }
+
     vPortEnterCritical();
     sscma_client_box_t *boxes = NULL;
     int box_count = 0;
@@ -39,7 +65,56 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
     return;
 }
 
-void on_log(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx) { }
+void on_log(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
+{
+    EventBits_t mqttConnectBits = xEventGroupGetBits(s_mqtt_event_group);
+    if (mqttConnectBits & MQTT_CONNECTED_BIT)
+    {
+        int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, reply->data, reply->len, 0, 0);
+        if (msg_id < 0)
+        {
+            ESP_LOGE(TAG, "Failed to publish: %d", msg_id);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Publish success: %d", reply->len);
+        }
+        return;
+    }
+
+    if (reply->len >= 100)
+    {
+        strcpy(&reply->data[100 - 4], "...");
+    }
+
+    ESP_LOGI(TAG, "log: %s\n", reply->data);
+}
+
+void on_response(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
+{
+    EventBits_t mqttConnectBits = xEventGroupGetBits(s_mqtt_event_group);
+    if (mqttConnectBits & MQTT_CONNECTED_BIT)
+    {
+        int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, reply->data, reply->len, 0, 0);
+        if (msg_id < 0)
+        {
+            ESP_LOGE(TAG, "Failed to publish: %d", msg_id);
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Publish success: %d", reply->len);
+        }
+        return;
+    }
+
+    if (reply->len >= 100)
+    {
+        strcpy(&reply->data[100 - 4], "...");
+    }
+
+    ESP_LOGI(TAG, "response: %s\n", reply->data);
+}
 
 esp_err_t read_wifi_config(sscma_client_wifi_t *wifi)
 {
@@ -222,7 +297,7 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
         ESP_LOGI(TAG, "Client ID: %s", mqtt.client_id == NULL ? "NULL" : mqtt.client_id);
         //ESP_LOGI(TAG, "Use SSL: %s", mqtt.use_ssl == NULL ? "NULL" : mqtt.use_ssl);
         ESP_LOGI(TAG, "Port1: %d", mqtt.port1 == 0 ? 0 : mqtt.port1);
-        ESP_LOGI(TAG, "use_ssl1: %d", mqtt.use_ssl1 == 0 ? 0 : mqtt.use_ssl1);
+        ESP_LOGI(TAG, "use_ssl1: %d", mqtt.use_ssl1);
 
         nvs_handle_t my_handle;
         esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &my_handle);
@@ -239,7 +314,7 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
             const char *client_id = mqtt.client_id ? mqtt.client_id : "null";
             //const char *use_ssl = mqtt.use_ssl ? mqtt.use_ssl : "null";
             const int *port1 = mqtt.port1 ? mqtt.port1 : "null";
-            const int *use_ssl1 = mqtt.use_ssl1? mqtt.use_ssl1 : "null";
+            const int *use_ssl1 = mqtt.use_ssl1;
 
             ret = nvs_set_str(my_handle, NVS_KEY_MQTT_USERNAME, username);
             ESP_ERROR_CHECK(ret);
@@ -382,6 +457,8 @@ void wifi_init_sta()
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    ESP_ERROR_CHECK(esp_netif_set_hostname(netif, "A1102"));//tcpip name is A1102
+
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
@@ -401,43 +478,6 @@ void wifi_init_sta()
     vEventGroupDelete(s_wifi_event_group);
 }
 
-
-// void mqtt_intialize()
-// {
-//     sscma_client_mqtt_t mqtt;
-//     memset(&mqtt, 0, sizeof(mqtt));
-//     if (read_mqtt_config(&mqtt) == ESP_OK)
-//     {
-//         ESP_LOGI(TAG, "11Username: %s", mqtt.username == NULL ? "NULL" : mqtt.username);
-//         ESP_LOGI(TAG, "11Password: %s", mqtt.password == NULL ? "NULL" : mqtt.password);
-//         ESP_LOGI(TAG, "Address: %s", mqtt.address == NULL ? "NULL" : mqtt.address);
-//         ESP_LOGI(TAG, "Port: %s", mqtt.port == NULL ? "NULL" : mqtt.port);
-//         ESP_LOGI(TAG, "Client ID: %s", mqtt.client_id == NULL ? "NULL" : mqtt.client_id);
-//         ESP_LOGI(TAG, "Use SSL: %s", mqtt.use_ssl == NULL ? "NULL" : mqtt.use_ssl);
-//     }
-//     uint8_t mac[8] = { 0 };
-//     esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
-
-//     snprintf(mqtt_client_id, sizeof(mqtt_client_id), "watcher-%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-//     snprintf(mqtt_tx_topic, sizeof(mqtt_tx_topic), "sscma/v0/%s/tx", mqtt_client_id);
-//     snprintf(mqtt_rx_topic, sizeof(mqtt_rx_topic), "sscma/v0/%s/rx", mqtt_client_id);
-
-//     ESP_LOGI(TAG, "MQTT client id: %s", mqtt_client_id);
-
-//     esp_mqtt_client_config_t mqtt_cfg = { .broker.address.uri = CONFIG_MQTT_BROKER,
-//         .credentials.client_id = mqtt_client_id,
-// #ifdef CONFIG_MQTT_CREADENTIAL_USERNAME
-//         .credentials.username = CONFIG_MQTT_CREADENTIAL_USERNAME,
-// #endif
-// #ifdef CONFIG_MQTT_CREADENTIAL_PASSWORD
-//         .credentials.authentication.password = CONFIG_MQTT_CREADENTIAL_PASSWORD
-// #endif
-//     };
-//     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-//     esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
-//     esp_mqtt_client_start(mqtt_client);
-// }
-
 void mqtt_initialize()
 {
     sscma_client_mqtt_t mqtt;
@@ -451,7 +491,7 @@ void mqtt_initialize()
         ESP_LOGI(TAG, "Client ID: %s", mqtt.client_id == NULL ? "NULL" : mqtt.client_id);
         //ESP_LOGI(TAG, "Use SSL: %s", mqtt.use_ssl == NULL ? "NULL" : mqtt.use_ssl);
         ESP_LOGI(TAG, "port: %d", mqtt.port1 == 0 ? 0 : mqtt.port1);
-        ESP_LOGI(TAG, "use_ssl: %d", mqtt.use_ssl1 == 0 ? 0 : mqtt.use_ssl1);
+        ESP_LOGI(TAG, "read_use_ssl: %d", mqtt.use_ssl1);
     }
 
     uint8_t mac[8] = { 0 };
@@ -466,15 +506,69 @@ void mqtt_initialize()
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = mqtt.address,
         .broker.address.port = mqtt.port1,
-        .credentials.client_id = mqtt_client_id,
+        .credentials.client_id = mqtt.client_id,
         .credentials.username = mqtt.username,
         .credentials.authentication.password = mqtt.password,
-        .broker.verification.certificate = mqtt.use_ssl ? "path/to/certificate" : NULL 
+        .broker.verification.certificate = mqtt.use_ssl1
     };
 
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
     esp_mqtt_client_start(mqtt_client);
+}
+
+esp_err_t write_modbus_address(uint16_t modbus_address)
+{
+    nvs_handle_t my_handle;
+    esp_err_t ret;
+
+    ret = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = nvs_set_u16(my_handle, NVS_KEY_ADDR, modbus_address);
+    if (ret != ESP_OK) {
+        nvs_close(my_handle);
+        return ret;
+    }
+
+    ret = nvs_commit(my_handle);
+    if (ret != ESP_OK) {
+        nvs_close(my_handle);
+        return ret;
+    }
+
+    nvs_close(my_handle);
+
+    return ESP_OK;
+}
+
+esp_err_t write_modbus_baud(uint32_t modbus_baud)
+{
+    nvs_handle_t my_handle;
+    esp_err_t ret;
+
+    ret = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = nvs_set_u32(my_handle, NVS_KEY_BAUD, modbus_baud);
+    if (ret != ESP_OK) {
+        nvs_close(my_handle);
+        return ret;
+    }
+
+    ret = nvs_commit(my_handle);
+    if (ret != ESP_OK) {
+        nvs_close(my_handle);
+        return ret;
+    }
+
+    nvs_close(my_handle);
+
+    return ESP_OK;
 }
 
 void nvs_modbus()
@@ -495,10 +589,10 @@ void nvs_modbus()
         ESP_LOGI(TAG, "NVS handle opened successfully");
     }
     
-    modbus_address = 1; // 默认地址
+    modbus_address = 1; 
     ret = nvs_get_u16(my_handle, NVS_KEY_ADDR, &modbus_address);
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        modbus_address = 1;
+        //modbus_address = 1;
         ret = nvs_set_u16(my_handle, NVS_KEY_ADDR, modbus_address);
         ESP_ERROR_CHECK(ret);
     } else {
@@ -508,7 +602,7 @@ void nvs_modbus()
     modbus_baud = 115200;
     ret = nvs_get_u16(my_handle, NVS_KEY_BAUD, &modbus_baud);
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        modbus_baud = 115200;
+        //modbus_baud = 115200;
         ret = nvs_set_u16(my_handle, NVS_KEY_BAUD, modbus_baud);
         ESP_ERROR_CHECK(ret);
     } else {
@@ -520,20 +614,48 @@ void nvs_modbus()
     
 }
 
+// uint16_t read_modbus_value(uint16_t reg_address)
+// {
+//     uint16_t modbus_value = 0;
+//     mb_param_info_t reg_info;
+//     esp_err_t err;
+
+//     err = mbc_slave_get_param_info(&reg_info, 1000); 
+//     if (err == ESP_OK) {
+
+//         if (reg_info.type == MB_PARAM_HOLDING && reg_info.start_offset == reg_address) {
+//             modbus_value = *(uint16_t*)reg_info.address;
+//             ESP_LOGI(TAG, "Modbus value at 0x%04X: %d", reg_address, modbus_value);
+//         } else {
+//             ESP_LOGE(TAG, "Mismatched register type or address");
+//         }
+//     } else {
+//         ESP_LOGE(TAG, "Failed to read Modbus value at 0x%04X, error: %d", reg_address, err);
+//         modbus_value = 0; 
+//     }
+
+//     return modbus_value;
+// }
+
 void app_main(void)
 {
-    nvs_modbus();
+        esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    //nvs_modbus();
     wifi_init_sta();
-    //mqtt_intialize();
     mqtt_initialize();
     
     ESP_LOGI("main", "start");
     mbc_slave_init(MB_PORT_SERIAL_SLAVE, &mbc_slave_handler);
 
     comm_info.mode = MB_MODE_RTU;
-    comm_info.slave_addr = modbus_address;//modbus address
+    comm_info.slave_addr = 1;//modbus_address;//modbus address
     comm_info.port = UART_NUM_0; // uart 0
-    comm_info.baudrate = modbus_baud;
+    comm_info.baudrate = 115200;//modbus_baud;
     comm_info.parity = MB_PARITY_NONE;
     ESP_ERROR_CHECK(mbc_slave_setup((void *)&comm_info));
 
@@ -558,14 +680,14 @@ void app_main(void)
     holding_reg_area.type = MB_PARAM_HOLDING;//modbus地址
     holding_reg_area.start_offset = 0x0000;
     holding_reg_area.address = (void *)&(modbus_address);
-    holding_reg_area.size = sizeof(int32_t);
+    holding_reg_area.size = sizeof(uint16_t);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));
     
-    // holding_reg_area.type = MB_PARAM_HOLDING;//波特率
-    // holding_reg_area.start_offset = 0x0001;
-    // holding_reg_area.address = (void *)&(reg[10]);
-    // holding_reg_area.size = sizeof(int32_t);
-    // ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));    
+    holding_reg_area.type = MB_PARAM_HOLDING;//波特率
+    holding_reg_area.start_offset = 0x0001;
+    holding_reg_area.address = (void *)&(modbus_baud);
+    holding_reg_area.size = sizeof(uint32_t);
+    ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));    
 
     // holding_reg_area.type = MB_PARAM_HOLDING;//设备版本
     // holding_reg_area.start_offset = 0x0001;
@@ -607,6 +729,7 @@ void app_main(void)
         .on_connect = on_connect,
         .on_event = on_event,
         .on_log = on_log,
+        .on_response = on_response,
     };
 
     if (sscma_client_register_callback(client, &callback, NULL) != ESP_OK)
@@ -621,18 +744,16 @@ void app_main(void)
     {
         reg[i] = -1000;
     }
-
     ESP_LOGI("MB", "Listening for events...");
-
     while (1)
     {
         (void)mbc_slave_check_event(MB_READ_WRITE_MASK);
         ESP_ERROR_CHECK_WITHOUT_ABORT(mbc_slave_get_param_info(&reg_info, MB_PAR_INFO_GET_TOUT));
         if (reg_info.type & (MB_EVENT_HOLDING_REG_WR | MB_EVENT_HOLDING_REG_RD))
         {
-            // // Get parameter information from parameter queue
-            // ESP_LOGI(TAG, "HOLDING  (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,
-            //     (uint32_t)reg_info.address, (unsigned)reg_info.size);
+            // Get parameter information from parameter queue
+            ESP_LOGI(TAG, "HOLDING  (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,
+                (uint32_t)reg_info.address, (unsigned)reg_info.size);
             if (reg_info.mb_offset == 0x1000)
             {
                 sscma_client_invoke(client, -1, false, false);
@@ -644,16 +765,32 @@ void app_main(void)
                     reg[i] = -1000;
                 }
             }
-            else if (reg_info.mb_offset == 0x0000)
-            {
-                 ESP_LOGI(TAG, "HOLDING  (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,(uint32_t)reg_info.address, (unsigned)reg_info.size);
-                 if (reg_info.type != modbus_address)
-                 {
-                    //modbus_address = reg_info.type;
-                    //ESP_ERROR_CHECK(mbc_slave_setup((void *)&comm_info));
-                 }
+            // else if (reg_info.mb_offset == 0x0000)
+            // {
+            //      ESP_LOGI(TAG, "HOLDING  (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,(uint32_t)reg_info.address, (unsigned)reg_info.size);
+
+            //     uint16_t new_modbus_addr =  read_modbus_value(0x0000);
+            //     esp_err_t result = write_modbus_baud(new_modbus_addr);
+            //     if (result == ESP_OK) {
+            //         ESP_LOGI(TAG, "Modbus baud rate written successfully");
+            //     } else {
+            //         ESP_LOGE(TAG, "Failed to write Modbus baud rate");
+            //     }
                  
-            }
+            // }
+            // else if (reg_info.mb_offset == 0x0001)
+            // {
+            //      ESP_LOGI(TAG, "HOLDING  (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,(uint32_t)reg_info.address, (unsigned)reg_info.size);
+
+            //     uint16_t new_modbus_baud =  read_modbus_value(0x0001);
+            //     esp_err_t result = write_modbus_baud(new_modbus_baud);
+            //     if (result == ESP_OK) {
+            //         ESP_LOGI(TAG, "Modbus baud rate written successfully");
+            //     } else {
+            //         ESP_LOGE(TAG, "Failed to write Modbus baud rate");
+            //     }
+                 
+            // }            
         }
     }
 }

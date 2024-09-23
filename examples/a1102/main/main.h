@@ -36,6 +36,7 @@
 #include "sscma_client_io.h"
 #include "sscma_client_ops.h"
 
+
 #include "sscma_client_commands.h"
 
 #define TAG "SenseCAP A1102"
@@ -79,7 +80,7 @@ volatile bool is_captured = false;
 #define NVS_KEY_BAUD "modbus_baud"
 
 uint16_t modbus_address = 1;
-uint16_t modbus_baud = 115200;
+uint32_t modbus_baud = 115200;
 
 char wifi_ssid = NULL;
 char wifi_pass = NULL;
