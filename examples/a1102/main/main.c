@@ -2,39 +2,8 @@
 
 void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
 {
-     EventBits_t mqttConnectBits = xEventGroupGetBits(s_mqtt_event_group);
-    if (mqttConnectBits & MQTT_CONNECTED_BIT)
-    {
-        int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, reply->data, reply->len, 0, 0);
-        if (msg_id < 0)
-        {
-            ESP_LOGE(TAG, "Failed to publish: %d", msg_id);
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
-        }
-        else
-        {
-            ESP_LOGI(TAG, "Publish success: %d", reply->len);
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
-        }
-        return;
-        
-    }
-
-    char *img = NULL;
-    int img_size = 0;
-    if (sscma_utils_fetch_image_from_reply(reply, &img, &img_size) == ESP_OK)
-    {
-        ESP_LOGI(TAG, "image_size: %d\n", img_size);
-        free(img);
-    }
-
-    vPortEnterCritical();
     sscma_client_box_t *boxes = NULL;
     int box_count = 0;
-    for (int i = 0; i < 9; i++)
-    {
-        reg[i] = -1000;
-    }
     if (sscma_utils_fetch_boxes_from_reply(reply, &boxes, &box_count) == ESP_OK)
     {
         if (box_count > 0)
@@ -42,53 +11,52 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
             for (int i = 0; i < box_count && i < 9; i++)
             {
                 reg[i] = boxes[i].target * 1000 + boxes[i].score * 10;
+                ESP_LOGI("event", "target: %d, score: %d", boxes[i].target, boxes[i].score);
             }
         }
         free(boxes);
     }
 
-    sscma_client_class_t *classes = NULL;
-    int class_count = 0;
-    if (sscma_utils_fetch_classes_from_reply(reply, &classes, &class_count) == ESP_OK)
-    {
-        if (class_count > 0)
-        {
-            for (int i = 0; i < class_count && i < 9; i++)
-            {
-                reg[i] = classes[i].target * 1000 + classes[i].score * 10;
-            }
-        }
-        free(classes);
-    }
-        is_captured = true;
-    vPortExitCritical();
-    return;
-}
-
-void on_log(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
-{
     EventBits_t mqttConnectBits = xEventGroupGetBits(s_mqtt_event_group);
-    if (mqttConnectBits & MQTT_CONNECTED_BIT)
+    char *img = NULL;
+    int img_size = 0;
+    if (sscma_utils_fetch_image_from_reply(reply, &img, &img_size ) == ESP_OK)
     {
+        ESP_LOGI(TAG, "image_size: %d\n", img_size);
+        
         int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, reply->data, reply->len, 0, 0);
         if (msg_id < 0)
         {
             ESP_LOGE(TAG, "Failed to publish: %d", msg_id);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
         else
         {
             ESP_LOGI(TAG, "Publish success: %d", reply->len);
         }
+        free(img);
+        sscma_client_invoke(client, -1, false, false);
         return;
     }
 
-    if (reply->len >= 100)
+}
+
+void on_log(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
+{
+    sscma_client_box_t *boxes = NULL;
+    int box_count = 0;
+    if (sscma_utils_fetch_boxes_from_reply(reply, &boxes, &box_count) == ESP_OK)
     {
-        strcpy(&reply->data[100 - 4], "...");
+        if (box_count > 0)
+        {
+            for (int i = 0; i < box_count && i < 9; i++)
+            {
+                reg[i] = boxes[i].target * 1000 + boxes[i].score * 10;
+                 ESP_LOGI("event", "target: %d, score: %d", boxes[i].target, boxes[i].score);
+            }
+        }
+        free(boxes);
     }
 
-    ESP_LOGI(TAG, "log: %s\n", reply->data);
 }
 
 void on_response(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
@@ -180,14 +148,6 @@ esp_err_t read_mqtt_config(sscma_client_mqtt_t *mqtt)
         mqtt->address = NULL;
     }
 
-    //ret = nvs_get_str(my_handle, NVS_KEY_MQTT_PORT, NULL, &required_size);
-    // if (ret == ESP_OK) {
-    //     mqtt->port = malloc(required_size);
-    //     ret = nvs_get_str(my_handle, NVS_KEY_MQTT_PORT, mqtt->port, &required_size);
-    // } else {
-    //     mqtt->port = NULL;
-    // }
-
     ret = nvs_get_i32(my_handle, NVS_KEY_MQTT_PORT1, &mqtt->port1);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Port1 read successfully: %d", mqtt->port1);
@@ -217,6 +177,21 @@ esp_err_t read_mqtt_config(sscma_client_mqtt_t *mqtt)
 
 void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
 {
+    sscma_client_box_t *boxes = NULL;
+    int box_count = 0;
+    if (sscma_utils_fetch_boxes_from_reply(reply, &boxes, &box_count) == ESP_OK)
+    {
+        if (box_count > 0)
+        {
+            for (int i = 0; i < box_count && i < 9; i++)
+            {
+                reg[i] = boxes[i].target * 1000 + boxes[i].score * 10;
+                 ESP_LOGI("event", "target: %d, score: %d", boxes[i].target, boxes[i].score);
+            }
+        }
+        free(boxes);
+    }
+
     sscma_client_info_t *info = NULL;
     if (sscma_client_get_info(client, &info, true) == ESP_OK)
     {
@@ -293,9 +268,7 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
         ESP_LOGI(TAG, "00Username: %s", mqtt.username == NULL ? "NULL" : mqtt.username);
         ESP_LOGI(TAG, "Password: %s", mqtt.password == NULL ? "NULL" : mqtt.password);
         ESP_LOGI(TAG, "Address: %s", mqtt.address == NULL ? "NULL" : mqtt.address);
-        //ESP_LOGI(TAG, "Port: %s", mqtt.port == NULL ? "NULL" : mqtt.port);
         ESP_LOGI(TAG, "Client ID: %s", mqtt.client_id == NULL ? "NULL" : mqtt.client_id);
-        //ESP_LOGI(TAG, "Use SSL: %s", mqtt.use_ssl == NULL ? "NULL" : mqtt.use_ssl);
         ESP_LOGI(TAG, "Port1: %d", mqtt.port1 == 0 ? 0 : mqtt.port1);
         ESP_LOGI(TAG, "use_ssl1: %d", mqtt.use_ssl1);
 
@@ -310,9 +283,7 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
             const char *username = mqtt.username ? mqtt.username : "null";
             const char *password = mqtt.password ? mqtt.password : "null";
             const char *address = mqtt.address ? mqtt.address : "null";
-            //const char *port = mqtt.port ? mqtt.port : "null";
             const char *client_id = mqtt.client_id ? mqtt.client_id : "null";
-            //const char *use_ssl = mqtt.use_ssl ? mqtt.use_ssl : "null";
             const int *port1 = mqtt.port1 ? mqtt.port1 : "null";
             const int *use_ssl1 = mqtt.use_ssl1;
 
@@ -325,17 +296,11 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
             ret = nvs_set_str(my_handle, NVS_KEY_MQTT_ADDRESS, address);
             ESP_ERROR_CHECK(ret);
 
-            // ret = nvs_set_str(my_handle, NVS_KEY_MQTT_PORT, port);
-            // ESP_ERROR_CHECK(ret);
-
             ret = nvs_set_i32(my_handle, NVS_KEY_MQTT_PORT1, port1);
             ESP_ERROR_CHECK(ret);
 
             ret = nvs_set_str(my_handle, NVS_KEY_MQTT_CLIENT_ID, client_id);
             ESP_ERROR_CHECK(ret);
-
-            // ret = nvs_set_str(my_handle, NVS_KEY_MQTT_USE_SSL, use_ssl);
-            // ESP_ERROR_CHECK(ret);
 
             ret = nvs_set_i32(my_handle, NVS_KEY_MQTT_USE_SSL1, use_ssl1);
             ESP_ERROR_CHECK(ret);
@@ -410,9 +375,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
             sscma_client_write(client, event->data, event->data_len);
+            ESP_LOGI(TAG, "data:%s,data_len:%d",event->data,event->data_len);
             break;
         case MQTT_EVENT_ERROR:
             ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
+            esp_restart();
             break;
         default:
             ESP_LOGI(TAG, "Other event id:%d", event->event_id);
@@ -487,19 +454,13 @@ void mqtt_initialize()
         ESP_LOGI(TAG, "Username: %s", mqtt.username == NULL ? "NULL" : mqtt.username);
         ESP_LOGI(TAG, "Password: %s", mqtt.password == NULL ? "NULL" : mqtt.password);
         ESP_LOGI(TAG, "Address: %s", mqtt.address == NULL ? "NULL" : mqtt.address);
-        //ESP_LOGI(TAG, "Port: %s", mqtt.port == NULL ? "NULL" : mqtt.port);
         ESP_LOGI(TAG, "Client ID: %s", mqtt.client_id == NULL ? "NULL" : mqtt.client_id);
-        //ESP_LOGI(TAG, "Use SSL: %s", mqtt.use_ssl == NULL ? "NULL" : mqtt.use_ssl);
         ESP_LOGI(TAG, "port: %d", mqtt.port1 == 0 ? 0 : mqtt.port1);
         ESP_LOGI(TAG, "read_use_ssl: %d", mqtt.use_ssl1);
     }
 
-    uint8_t mac[8] = { 0 };
-    esp_wifi_get_mac(ESP_IF_WIFI_STA, mac);
-
-    snprintf(mqtt_client_id, sizeof(mqtt_client_id), "watcher-%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    snprintf(mqtt_tx_topic, sizeof(mqtt_tx_topic), "sscma/v0/%s/tx", mqtt_client_id);
-    snprintf(mqtt_rx_topic, sizeof(mqtt_rx_topic), "sscma/v0/%s/rx", mqtt_client_id);
+    snprintf(mqtt_tx_topic, sizeof(mqtt_tx_topic), "sscma/v0/%s/tx", mqtt.client_id);
+    snprintf(mqtt_rx_topic, sizeof(mqtt_rx_topic), "sscma/v0/%s/rx", mqtt.client_id);
 
     ESP_LOGI(TAG, "MQTT client id: %s", mqtt_client_id);
 
@@ -639,7 +600,7 @@ void nvs_modbus()
 
 void app_main(void)
 {
-        esp_err_t ret = nvs_flash_init();
+    esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
@@ -686,7 +647,7 @@ void app_main(void)
     holding_reg_area.type = MB_PARAM_HOLDING;//波特率
     holding_reg_area.start_offset = 0x0001;
     holding_reg_area.address = (void *)&(modbus_baud);
-    holding_reg_area.size = sizeof(uint32_t);
+    holding_reg_area.size = sizeof(uint16_t);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));    
 
     // holding_reg_area.type = MB_PARAM_HOLDING;//设备版本
@@ -728,8 +689,6 @@ void app_main(void)
     const sscma_client_callback_t callback = {
         .on_connect = on_connect,
         .on_event = on_event,
-        .on_log = on_log,
-        .on_response = on_response,
     };
 
     if (sscma_client_register_callback(client, &callback, NULL) != ESP_OK)
@@ -753,7 +712,8 @@ void app_main(void)
         {
             // Get parameter information from parameter queue
             ESP_LOGI(TAG, "HOLDING  (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u", reg_info.time_stamp, (unsigned)reg_info.mb_offset, (unsigned)reg_info.type,
-                (uint32_t)reg_info.address, (unsigned)reg_info.size);
+            (uint32_t)reg_info.address, (unsigned)reg_info.size);
+
             if (reg_info.mb_offset == 0x1000)
             {
                 sscma_client_invoke(client, -1, false, false);
@@ -761,8 +721,14 @@ void app_main(void)
             else if (reg_info.mb_offset == 0x8002)
             {
                 for (int i = 0; i < 9; i++)
-                {
+                {                
                     reg[i] = -1000;
+                    
+                    if (i == 8)
+                    {
+                       sscma_client_write(client,"AT+INVOKE=1,0,0", 15);
+                    }
+                    
                 }
             }
             // else if (reg_info.mb_offset == 0x0000)
