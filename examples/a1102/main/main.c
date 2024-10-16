@@ -1,5 +1,7 @@
 #include "main.h"
 
+int read_config = 0;
+
 void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, void *user_ctx)
 {
     sscma_client_box_t *boxes = NULL;
@@ -90,6 +92,9 @@ esp_err_t read_wifi_config(sscma_client_wifi_t *wifi)
     esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &my_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
+        wifi->ssid = "testssid";
+        wifi->password = "testpassword";
+        read_config = 1;
         return ret;
     }
 
@@ -120,6 +125,13 @@ esp_err_t read_mqtt_config(sscma_client_mqtt_t *mqtt)
     esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &my_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
+        mqtt->username = "testusername";
+        mqtt->password = "testpassword";
+        mqtt->address = "testaddress";
+        mqtt->port1 = 1883;
+        mqtt->use_ssl1 = 0;
+        mqtt->client_id = "testclient_id";
+        read_config = 1;
         return ret;
     }
 
@@ -205,13 +217,14 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
     {
         printf("get info failed\n");
     }
-
+    
     sscma_client_model_t *model = NULL;
     if (sscma_client_get_model(client, &model, true) == ESP_OK)
     {
         printf("ID: %d\n", model->id ? model->id : -1);
         printf("UUID: %s\n", model->uuid ? model->uuid : "N/A");
-        reg[9] = 1000000000 + atoi(model->uuid) * 1000 + 101;
+        reg[9] = 1000000000 + atoi(model->uuid) * 1000 + 140;
+        printf();
         printf("Name: %s\n", model->name ? model->name : "N/A");
         printf("Version: %s\n", model->ver ? model->ver : "N/A");
         printf("URL: %s\n", model->url ? model->url : "N/A");
@@ -310,6 +323,11 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
 
             nvs_close(my_handle);
         }
+        if (read_config == 1)
+        {
+            //esp_restart();
+        }
+        
     }
     else
     {
@@ -374,12 +392,12 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             break;
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-            sscma_client_write(client, event->data, event->data_len);
             ESP_LOGI(TAG, "data:%s,data_len:%d",event->data,event->data_len);
+            sscma_client_write(client, event->data, event->data_len);
             break;
         case MQTT_EVENT_ERROR:
             ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
-            esp_restart();
+            //esp_restart();
             break;
         default:
             ESP_LOGI(TAG, "Other event id:%d", event->event_id);
@@ -437,6 +455,7 @@ void wifi_init_sta()
     else if (bits & WIFI_FAIL_BIT)
     {
         ESP_LOGI(TAG, "Failed to connect to SSID: %s", wifi.ssid);
+        read_config = 1;
     }
     else
     {
@@ -649,7 +668,7 @@ void app_main(void)
     holding_reg_area.address = (void *)&(modbus_baud);
     holding_reg_area.size = sizeof(uint16_t);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(holding_reg_area));    
-
+    
     // holding_reg_area.type = MB_PARAM_HOLDING;//设备版本
     // holding_reg_area.start_offset = 0x0001;
     // holding_reg_area.address = (void *)&(reg[11]);
