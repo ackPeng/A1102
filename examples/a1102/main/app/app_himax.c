@@ -58,13 +58,13 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
                 ESP_LOGI("event","memcpy img_size %d finish !! register size is %d !!\r\n",img_size,modbus_image.reg_length);
             }
 
-        int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, reply->data, reply->len, 0, 0);
-        if (msg_id < 0)
-        {
-            ESP_LOGE(TAG, "Failed to publish: %d", msg_id);
-        }else{
-            ESP_LOGE(TAG, "publish  OK !!");
-        }
+        // int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, reply->data, reply->len, 0, 0);
+        // if (msg_id < 0)
+        // {
+        //     ESP_LOGE(TAG, "Failed to publish: %d", msg_id);
+        // }else{
+        //     ESP_LOGE(TAG, "publish  OK !!");
+        // }
         
         free(img);
         sscma_client_invoke(client, -1, false, false);
