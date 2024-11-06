@@ -10,30 +10,34 @@
 #define MB_WRITE_MASK        (MB_EVENT_HOLDING_REG_WR | MB_EVENT_COILS_WR)
 #define MB_READ_WRITE_MASK   (MB_READ_MASK | MB_WRITE_MASK)
 
+
+
 typedef struct{
-    uint16_t slave_id; // 从站地址  RW
-    uint16_t buatrate; //波特率   RW
-    uint32_t device_version; //设备版本  R
-    uint32_t device_id; // 设备ID  R
-    uint32_t modle_id;//模型ID  R
-    uint32_t result[10];//结果   R
+    uint16_t slave_id; // slave address  RW
+    uint16_t buatrate; //baud rate   RW
+    uint32_t device_version; //Device version  R
+    uint32_t device_id; // Device ID  R
+    uint32_t modle_id;//Model ID  R
+    uint32_t result[10];//result   R
     uint32_t xy[9];
     uint32_t wh[9];
-    // uint32_t result2[18];
+    
 
 }a1102_holding_reg_params_t;
 
-// 两种方式： 1 设置定长的数据结构存储image  2、每次都变长
+
+//Currently using fixed Memory to store images
 typedef struct 
 {
     uint16_t reg_length;
-    uint16_t image[10240]
-    /* data */
+    uint16_t image[20480]
+   
 }holding_image_params;
 
 
 
-// void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate);
+
+extern bool master_is_reading_flag;
 
 void app_modbus_init();
 #endif

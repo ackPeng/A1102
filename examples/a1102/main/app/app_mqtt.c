@@ -107,10 +107,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             break;
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-                // 确保数据以字符串形式处理
-            event->data[event->data_len] = '\0';  // 添加字符串结束符
+                // Make sure the data is handled as a string
+            event->data[event->data_len] = '\0';  // Add string terminator
 
-            // 解析JSON
+            // Parse JSON
             cJSON *json = cJSON_Parse((const char *)event->data);
             if (json == NULL) {
                 printf("JSON parse error\n");
@@ -119,8 +119,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
             cJSON *type = cJSON_GetObjectItem(json, "type");
             cJSON *url = cJSON_GetObjectItem(json, "url");
-
-
 
             if (type && url) {
                 printf("Type: %s\n", type->valuestring);
@@ -135,14 +133,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                     event_type = OTA_AI_MODLE;
                 }
 
-                // 创建事件数据
+                // Create event data
                 ota_event_data_t event_data;
                 event_data.event_type = event_type;
                 strncpy(event_data.url, url->valuestring, sizeof(event_data.url) - 1);
-                event_data.url[sizeof(event_data.url) - 1] = '\0';  // 确保字符串结束
+                event_data.url[sizeof(event_data.url) - 1] = '\0';  // Make sure the string ends
 
                 if(event_type != OTA_UNKNOWN){
-                    // 发送事件
+                    // Send event
                     esp_err_t err = esp_event_post(OTA_EVENT_BASE, event_type, &event_data, sizeof(event_data), portMAX_DELAY);
                     if (err != ESP_OK) {
                         printf("Failed to post event: %s\n", esp_err_to_name(err));

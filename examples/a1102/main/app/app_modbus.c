@@ -7,16 +7,18 @@ mb_param_info_t reg_info; // keeps the Modbus registers access information
 mb_communication_info_t comm_info; // Modbus communication parameters
 mb_register_area_descriptor_t reg_area; // Modbus register area descriptor structure
 
+bool master_is_reading_flag = false;
+
 uint32_t temp_data[10];
 uint32_t temp_data2[18];
 
 static const char *TAG = "app_modbus";
 
-// 寄存器内容初始化
+// Modbus Register content initialization
 static void init_a1102_msg(uint16_t new_slava_id,uint16_t new_baudrate){
     
     for (int i = 0; i < 9; i++) {
-        temp_data[i] = 4294966296;  // 对应于 -1000 的无符号值
+        temp_data[i] = 4294966296;  //Corresponding to the unsigned value of -1000
         
     }
     temp_data[9] = 1060094140;
@@ -80,8 +82,8 @@ void refresh_data(void *pvParameters){
 
         }
 
-        // 延迟1秒（1000毫秒），然后再次更新
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
     
 }
@@ -97,7 +99,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     
 
     printf("start modbus setting !!!\r\n");
- // Set UART log level
+    // Set UART log level
     esp_log_level_set(TAG, ESP_LOG_INFO);
     void* mbc_slave_handler = NULL;
 
@@ -121,19 +123,19 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     ESP_ERROR_CHECK(mbc_slave_setup((void*)&comm_info));
     printf("mbc_slave_setup end !!!\r\n");
     /*
-        开始映射寄存器区域：
+        Start mapping register area：
             slave_id  -------------> 0
             buatrate  -------------> 1
             device_version --------> 2
             device_id -------------> 0X8000 ----> 32768
             modle_id --------------> 0X8002 ----> 32770
             result 0~9 ------------> 0x1000 ~ 0x1010 ----> 4096 ~ 4112
-            坐标信息xy  -----> 0x2000 ~0x2000 + 9
-            坐标信息wh  -----> 0x3000 ~ 0x3000 + 9
-            图片：0X8006 + 10241
+            Coordinate information xy  -----> 0x2000 ~0x2000 + 9
+            Coordinate information wh  -----> 0x3000 ~ 0x3000 + 9
+            picture length：0X8006 
+            picture: 0x8007 + 20480
     */
 
-    // 映射 slave_id  uint16 ---> 占一个寄存器
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0x0000; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&a1102_msg.slave_id; // Set pointer to storage instance
@@ -141,7 +143,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     reg_area.size = sizeof(a1102_msg.slave_id);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
     
-    //映射 buatrate  uint 16 
+ 
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0x0001; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&a1102_msg.buatrate; // Set pointer to storage instance
@@ -149,7 +151,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     reg_area.size = sizeof(uint32_t);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
 
-    //映射 device_version
+ 
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0x0003; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&a1102_msg.device_version; // Set pointer to storage instance
@@ -157,7 +159,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     reg_area.size = sizeof(a1102_msg.device_version);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
 
-    //映射 device_id
+
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0X8000; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&a1102_msg.device_id; // Set pointer to storage instance
@@ -166,7 +168,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
 
 
-    // 映射 modle_id
+ 
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0X8002; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&a1102_msg.modle_id; // Set pointer to storage instance
@@ -174,7 +176,6 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     reg_area.size = sizeof(a1102_msg.modle_id);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
 
-    //映射 result 0 ~ 9 
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0x1000; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&a1102_msg.result; // Set pointer to storage instance
@@ -182,7 +183,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     reg_area.size = sizeof(a1102_msg.result);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
 
-    //映射 坐标信息xy 
+ 
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0x2000; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&a1102_msg.xy; // Set pointer to storage instance
@@ -190,7 +191,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     reg_area.size = sizeof(a1102_msg.xy);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
 
-        //映射 坐标信息xy 
+   
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0x3000; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&a1102_msg.wh; // Set pointer to storage instance
@@ -199,7 +200,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
 
 
-    //映射 图片长度
+  
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0x8006; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&modbus_image.reg_length; // Set pointer to storage instance
@@ -207,7 +208,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
     reg_area.size = sizeof(modbus_image.reg_length);
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(reg_area));
 
-    //映射 图片
+
     reg_area.type = MB_PARAM_HOLDING; // Set type of register area
     reg_area.start_offset = 0x8007; // Offset of register area in Modbus protocol
     reg_area.address = (void*)&modbus_image.image; // Set pointer to storage instance
@@ -217,8 +218,8 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
 
     printf("mbc_slave_set_descriptor end !!!\r\n");
 
-        // setup_reg_data(); // Set values into known state
-    init_a1102_msg(new_slava_id,new_baudrate);// 设置初始值
+    
+    init_a1102_msg(new_slava_id,new_baudrate);
     printf("init_a1102_msg end !!!\r\n");
     // Starts of modbus controller and stack
     ESP_ERROR_CHECK(mbc_slave_start());
@@ -263,29 +264,34 @@ void modbus_task(void *pvParameter){
                             (uint32_t)reg_info.address,
                             (unsigned)reg_info.size);
 
-            // 修改波特率
+            // Modify baud rate
             if (reg_info.address == (uint8_t*)&a1102_msg.buatrate && reg_info.type &  MB_EVENT_HOLDING_REG_WR) {
                 ESP_LOGI(TAG,"change buatrate");
                 modbus_reset_flage = 1;
                 set_up_modbus(a1102_msg.slave_id,a1102_msg.buatrate);
             }
 
-            // 修改slave id
+            // Modify slave id
             if (reg_info.address == (uint8_t*)&a1102_msg.slave_id && reg_info.type &  MB_EVENT_HOLDING_REG_WR) {
                 ESP_LOGI(TAG,"change slave_id");
                 modbus_reset_flage = 1;
                 set_up_modbus(a1102_msg.slave_id,a1102_msg.buatrate);
             }
-            // 传图
+
+            // Transfer pictures
+
+            if(reg_info.mb_offset == 0x8006){
+                master_is_reading_flag = true;
+            }
+
             if (reg_info.mb_offset == 0x8002)
             {
-                
+                master_is_reading_flag = false;
                 ESP_LOGI(TAG,"reg_info.mb_offset == 0x8002");
                 for (int i = 0; i < 9; i++)
                 {  
                     temp_data[i] = -1000;
                 }
-                
                 sscma_client_write(client,"AT+INVOKE=1,0,0", 15);
                 sscma_client_invoke(client, -1, false, false);
             }

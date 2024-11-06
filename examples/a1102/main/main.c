@@ -1,9 +1,6 @@
 #include "main.h"
 
 
-
-
-
 ESP_EVENT_DEFINE_BASE(OTA_EVENT_BASE);
 
 void app_main(void)

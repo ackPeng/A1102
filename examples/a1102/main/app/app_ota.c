@@ -9,14 +9,13 @@ static const char *TAG = "app_ota";
 const uint8_t server_cert_pem_start[] = "132154654";
 const uint8_t server_cert_pem_end[];
 
-// 任务句柄
 TaskHandle_t OTA_taskHandle = NULL;
 static TaskHandle_t g_task_sscma_writer;
 #define OTA_URL_SIZE 256
-// 定义缓冲区大小
-#define HIMAX_OTA_RINGBUFF_SIZE 20480 // 例如0.3MB
+//Define ring buffer size
+#define HIMAX_OTA_RINGBUFF_SIZE 20480 
 
-#define OTA_BUFF_SIZE 1024*1024 - 512 // 例如0.3MB
+
 
 // sscma_client_handle_t sscam_ota_client = NULL;
 // sscma_client_io_handle_t _sscma_flasher_io = NULL;
@@ -36,42 +35,6 @@ static RingbufHandle_t himax_ota_ringbuffer;
 static volatile atomic_bool g_sscma_writer_abort = ATOMIC_VAR_INIT(false);
 static SemaphoreHandle_t g_sem_sscma_writer_done;
 static ota_sscma_writer_userdata_t g_sscma_writer_userdata;
-
-
-
-/*     HIMAX start      */
-
-
-
-esp_err_t bsp_spiffs_init(char *mount_point, size_t max_files)
-{
-    static bool inited = false;
-    if (inited)
-    {
-        return ESP_OK;
-    }
-    esp_vfs_spiffs_conf_t conf = {
-        .base_path = mount_point,
-        .partition_label = "storage",
-        .max_files = max_files,
-        .format_if_mount_failed = false,
-    };
-    esp_vfs_spiffs_register(&conf);
-
-    size_t total = 0, used = 0;
-    esp_err_t ret_val = esp_spiffs_info(conf.partition_label, &total, &used);
-    if (ret_val != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret_val));
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Partition size: total: %d, used: %d", total, used);
-    }
-    return ret_val;
-}
-
-
 
 
 void bsp_sscma_flasher_init_legacy(void)
@@ -111,12 +74,10 @@ static esp_err_t __http_event_handler(esp_http_client_event_t *evt)
             content_len = 0;
             written_len = 0;
             //clear the ringbuffer
-
             size_t len;
             void* item;
-            // 使用 xRingbufferReceiveUpTo 来接收并清空缓冲区
+            // Use xRingbufferReceiveUpTo to receive and clear the buffer
             while ((item = xRingbufferReceiveUpTo(himax_ota_ringbuffer, &len, 0, HIMAX_OTA_RINGBUFF_SIZE))) {
-                // 返回 item 到环形缓冲区
                 vRingbufferReturnItem(himax_ota_ringbuffer, item);
             }
             
@@ -183,40 +144,6 @@ static esp_err_t __http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-
-void https_request(void) {
-    esp_http_client_config_t http_client_config = {0}; // 确保结构体零初始化
-    esp_http_client_handle_t http_client = NULL;
-
-
-    http_client_config.url = "http://192.168.124.43/firmware/human_pose.tflite";
-    http_client_config.method = HTTP_METHOD_GET;
-    http_client_config.timeout_ms = 5000;
-    http_client_config.crt_bundle_attach = esp_crt_bundle_attach;
-    http_client_config.user_data = &g_sscma_writer_userdata;
-    http_client_config.buffer_size = 512;
-    http_client_config.event_handler = __http_event_handler;
-
-#ifdef CONFIG_SKIP_COMMON_NAME_CHECK
-    http_client_config.skip_cert_common_name_check = true;
-#endif
-
-    http_client = esp_http_client_init(&http_client_config);
-    if (http_client == NULL) {
-        printf("HTTP client init failed\n");
-        return;
-    }
-
-    esp_err_t err = esp_http_client_perform(http_client);
-    if (err == ESP_OK) {
-        printf("HTTP GET request successful\n");
-
-    } else {
-        printf("HTTP GET request failed: %s\n", esp_err_to_name(err));
-    }
-
-    esp_http_client_cleanup(http_client);
-}
 
 
 static void sscma_ota_process()
@@ -449,7 +376,6 @@ sscma_writer_end:
 
 
 
-/*     HIMAX end      */
 
 
 /* Event handler for catching system events */
@@ -537,11 +463,9 @@ static esp_err_t _http_client_init_cb(esp_http_client_handle_t http_client)
 static void __app_event_handler(void *handler_args, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     ota_event_data_t *event_data_ptr = (ota_event_data_t *)event_data;
-        // 打印事件类型
-    printf("Received OTA event type: %d\n", event_data_ptr->event_type);
-    // 打印 URL
-    printf("Received URL: %s\n", event_data_ptr->url);
 
+    printf("Received OTA event type: %d\n", event_data_ptr->event_type);
+    printf("Received URL: %s\n", event_data_ptr->url);
 
     strcpy(ota_url,event_data_ptr->url);
     ota_type = event_data_ptr->event_type;
@@ -688,14 +612,7 @@ void ota_init()
     ESP_LOGI(TAG, "OTA init start");
     g_sem_sscma_writer_done = xSemaphoreCreateBinary();
 
-    // ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // // 定义静态结构体和存储
-    // StaticRingbuffer_t himax_ota_buffer_struct;
-    // uint8_t himax_ota_buffer_storage[HIMAX_OTA_RINGBUFF_SIZE];  // 使用栈上分配的存储空间
-
-
- 
     StaticRingbuffer_t *himax_ota_buffer_struct = (StaticRingbuffer_t *)malloc(sizeof(StaticRingbuffer_t));
     uint8_t *himax_ota_buffer_storage = (uint8_t *)malloc(HIMAX_OTA_RINGBUFF_SIZE);
 
@@ -708,37 +625,13 @@ void ota_init()
         printf("Failed to initialize himax_ota_ringbuffer.\n");
     }
 
-
-
-//     StaticRingbuffer_t himax_ota_buffer_struct;
-//    // 获取数据区域的地址
-//     uint8_t *himax_ota_buffer_storage = (uint8_t *)(((uintptr_t)DATA_AREA_ADDR + 3) & ~3);
-
-//     // 确保存储区和环形缓冲区大小匹配
-//     if (HIMAX_OTA_RINGBUFF_SIZE > DATA_AREA_SIZE) {
-//         ESP_LOGE(TAG, "Buffer size exceeds storage size!");
-//     }
-
-
-//     // 初始化环形缓冲区
-//     himax_ota_ringbuffer = xRingbufferCreateStatic(HIMAX_OTA_RINGBUFF_SIZE, RINGBUF_TYPE_BYTEBUF, himax_ota_buffer_storage, &himax_ota_buffer_struct);
-
-    // if (himax_ota_ringbuffer != NULL) {
-    //     ESP_LOGI("RINGBUFFER", "himax_ota_ringbuffer init successfully.");
-    // } else {
-    //     ESP_LOGE("RINGBUFFER", "Failed to initialize himax_ota_ringbuffer.");
-    // }
-
-
-
-
-
     ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(OTA_EVENT_BASE, ESP_EVENT_ANY_ID, &__app_event_handler, NULL));
 /*
 
  esp_err_t ret = esp_event_post(OTA_EVENT_BASE, OTA_ESP32 || OTA_HIMAX || AI, &event_data, sizeof(event_data), pdMS_TO_TICKS(10000));
 */
+
     bsp_sscma_flasher_init_legacy();
 
     xTaskCreate(&ota_task, "ota_task", 1024 * 8, NULL, 5, &OTA_taskHandle);

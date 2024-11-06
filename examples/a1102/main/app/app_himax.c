@@ -19,12 +19,13 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
             
             for (int i = 0; i < box_count && i < 9; i++)
             {
-                
-                
+                portENTER_CRITICAL(&param_lock);
+            
                 temp_data[i] = boxes[i].target * 1000 + boxes[i].score * 10;
-                // ESP_LOGI("event", "target: %d, score: %d temp_data %d is : %ld", boxes[i].target, boxes[i].score,i,temp_data[i]);
+                temp_data2[i] = boxes[i].x * 1000 + boxes[i].y;
+                temp_data2[9+i] =  boxes[i].w * 1000 + boxes[i].h;
 
-                
+                portEXIT_CRITICAL(&param_lock);
             }
             
         }
@@ -36,25 +37,26 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
     int img_size = 0;
     if (sscma_utils_fetch_image_from_reply(reply, &img, &img_size ) == ESP_OK)
     {
-        ESP_LOGI(TAG, "image_size: %d\n", img_size);
+        ESP_LOGI("event", "image_size: %d\n", img_size);
 
         if(img_size > sizeof(modbus_image.image)){
-            ESP_LOGI(TAG, "image_size > sizeof(modbus_image.image)\r\n");
-            
+            ESP_LOGI("event", "image_size > sizeof(modbus_image.image)\r\n");
+                    
         }else{
-            if(img_size & 1){
+  
+            if(master_is_reading_flag == false){
+                portENTER_CRITICAL(&param_lock);
+                if(img_size & 1){
                 //img_size 奇数
-                modbus_image.reg_length = img_size/2 + 1;
-            }else{
-                //img_size 偶数
-                modbus_image.reg_length = img_size/2;
+                    modbus_image.reg_length = img_size/2 + 1;
+                }else{
+                    //img_size 偶数
+                    modbus_image.reg_length = img_size/2;
+                }
+                memcpy(modbus_image.image,img,img_size);
+                portEXIT_CRITICAL(&param_lock);
+                ESP_LOGI("event","memcpy img_size %d finish !! register size is %d !!\r\n",img_size,modbus_image.reg_length);
             }
-            
-            memcpy(modbus_image.image,img,img_size);
-            
-            ESP_LOGI(TAG,"memcpy img_size %d finish !! register size is %d\r\n",img_size,modbus_image.reg_length);
-        }
-        
 
         int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, reply->data, reply->len, 0, 0);
         if (msg_id < 0)
@@ -68,6 +70,7 @@ void on_event(sscma_client_handle_t client, const sscma_client_reply_t *reply, v
         sscma_client_invoke(client, -1, false, false);
         return;
     }
+  }
 
 }
 
@@ -82,15 +85,13 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
     {
         if (box_count > 0)
         {
-            
+            portENTER_CRITICAL(&param_lock);
             for (int i = 0; i < box_count && i < 9; i++)
             {
-                
-                
                 temp_data[i] = boxes[i].target * 1000 + boxes[i].score * 10;
                  ESP_LOGI("event", "target: %d, score: %d", boxes[i].target, boxes[i].score);
-                
             }
+            portEXIT_CRITICAL(&param_lock);
             
         }
         free(boxes);
@@ -116,13 +117,14 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
         printf("ID: %d\n", model->id ? model->id : -1);
         printf("UUID: %s\n", model->uuid ? model->uuid : "N/A");
         
-        
+        portENTER_CRITICAL(&param_lock);
         temp_data[9] = 1000000000 + atoi(model->uuid) * 1000 + 140;
+        portEXIT_CRITICAL(&param_lock);
+
         printf("atoi(model->uuid) * 1000 = : %d\n", atoi(model->uuid) * 1000);
         printf("1000000000 + atoi(model->uuid) * 1000 + 140 : %ld\n", temp_data[9]);
         
 
-        // portEXIT_CRITICAL(&param_lock);
         printf("Name: %s\n", model->name ? model->name : "N/A");
         printf("Version: %s\n", model->ver ? model->ver : "N/A");
         printf("URL: %s\n", model->url ? model->url : "N/A");

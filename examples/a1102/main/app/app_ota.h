@@ -56,7 +56,7 @@
 // extern sscma_client_flasher_handle_t sscam_ota_flasher ;
 
 
-// 仅声明事件基
+// Declare event base only
 ESP_EVENT_DECLARE_BASE(OTA_EVENT_BASE);
 
 
@@ -104,7 +104,7 @@ extern bool esp32_ota ;
 extern bool himax_ota ;
 
 extern char ota_url[256]; 
-// OTA事件类型
+//OTA event type
 typedef enum {
     OTA_ESP32 = 0,
     OTA_HIMAX,
@@ -127,18 +127,11 @@ typedef struct {
     esp_http_client_handle_t http_client;
 } ota_sscma_writer_userdata_t;
 
-// 环形缓冲区
-#define DATA_AREA_ADDR 0x2B0000  // 根据分区表设置的地址
-#define DATA_AREA_SIZE 0x140000   // 根据分区表设置的大小
 
 
 void ota_init();
 
 void bsp_sscma_flasher_init_legacy(void);
-
-
-
-
 
 #endif
 
