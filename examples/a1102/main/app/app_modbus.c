@@ -1,31 +1,23 @@
 #include "app_modbus.h"
 
+
 holding_image_params modbus_image = {0};
 a1102_holding_reg_params_t a1102_msg = {0};
 int modbus_reset_flage = 0;
 mb_param_info_t reg_info; // keeps the Modbus registers access information
 mb_communication_info_t comm_info; // Modbus communication parameters
 mb_register_area_descriptor_t reg_area; // Modbus register area descriptor structure
+void* mbc_slave_handler = NULL;
 
 bool master_is_reading_flag = false;
 
-uint32_t temp_data[10];
-uint32_t temp_data2[18];
+bool restart_flage = false;
 
 static const char *TAG = "app_modbus";
 
 // Modbus Register content initialization
 static void init_a1102_msg(uint16_t new_slava_id,uint16_t new_baudrate){
     
-    for (int i = 0; i < 9; i++) {
-        temp_data[i] = 4294966296;  //Corresponding to the unsigned value of -1000
-        
-    }
-    temp_data[9] = 1060094140;
-
-    for(int i = 0; i < 18; i++){
-        temp_data2[i] = 0;
-    }
 
     memset(&modbus_image.image,0,sizeof(modbus_image.image));
     modbus_image.reg_length = 0;
@@ -53,40 +45,6 @@ static void init_a1102_msg(uint16_t new_slava_id,uint16_t new_baudrate){
 }
 
 
-void refresh_data(void *pvParameters){
-
-    while (1)
-    {
-        for (int i = 0; i < 10; i++) {
-            if(i == 9){
-                portENTER_CRITICAL(&param_lock);
-                mb_set_uint32_abcd((val_32_arr *)&a1102_msg.modle_id, temp_data[i]);
-                
-                portEXIT_CRITICAL(&param_lock);
-            }else{
-                portENTER_CRITICAL(&param_lock);
-                mb_set_uint32_abcd((val_32_arr *)&a1102_msg.result[i], temp_data[i]);
-                
-                portEXIT_CRITICAL(&param_lock);
-            }
-
-
-
-        }
-
-        for(int i = 0; i < 9; i++){
-            portENTER_CRITICAL(&param_lock);
-            mb_set_uint32_abcd((val_32_arr *)&a1102_msg.xy[i], temp_data2[i]);
-            mb_set_uint32_abcd((val_32_arr *)&a1102_msg.wh[i], temp_data2[9+i]);
-            portEXIT_CRITICAL(&param_lock);
-
-        }
-
-        
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-    
-}
 
 
 
@@ -97,11 +55,10 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
         mbc_slave_destroy();
     }
     
-
     printf("start modbus setting !!!\r\n");
     // Set UART log level
     esp_log_level_set(TAG, ESP_LOG_INFO);
-    void* mbc_slave_handler = NULL;
+    
 
     
     ESP_ERROR_CHECK(mbc_slave_init(MB_PORT_SERIAL_SLAVE, &mbc_slave_handler)); // Initialization of Modbus controller
@@ -240,6 +197,8 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
 
     ESP_LOGI(TAG, "Modbus slave stack initialized.");
     ESP_LOGI(TAG, "Start modbus test...");
+    vTaskDelay(1000);
+    restart_flage = false;
 
 }
 
@@ -248,59 +207,78 @@ void modbus_task(void *pvParameter){
     set_up_modbus(1,115);
     while (1)
     {
-      // Check for read/write events of Modbus master for certain events
-        (void)mbc_slave_check_event(MB_READ_WRITE_MASK);
-        ESP_ERROR_CHECK_WITHOUT_ABORT(mbc_slave_get_param_info(&reg_info, MB_PAR_INFO_GET_TOUT));
-        const char* rw_str = (reg_info.type & MB_READ_MASK) ? "READ" : "WRITE";
+        if(restart_flage != true)
+            (void)mbc_slave_check_event(MB_READ_WRITE_MASK);
 
-        // Filter events and process them accordingly
-        if(reg_info.type & (MB_EVENT_HOLDING_REG_WR | MB_EVENT_HOLDING_REG_RD)) {
-            // Get parameter information from parameter queue
-            ESP_LOGI(TAG, "HOLDING %s (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u",
-                            rw_str,
-                            reg_info.time_stamp,
-                            (unsigned)reg_info.mb_offset,
-                            (unsigned)reg_info.type,
-                            (uint32_t)reg_info.address,
-                            (unsigned)reg_info.size);
+        if(restart_flage != true){
+            
+            if (ESP_OK == mbc_slave_get_param_info(&reg_info, MB_PAR_INFO_GET_TOUT)) {
+                        const char* rw_str = (reg_info.type & MB_READ_MASK) ? "READ" : "WRITE";
 
-            // Modify baud rate
-            if (reg_info.address == (uint8_t*)&a1102_msg.buatrate && reg_info.type &  MB_EVENT_HOLDING_REG_WR) {
-                ESP_LOGI(TAG,"change buatrate");
-                modbus_reset_flage = 1;
-                set_up_modbus(a1102_msg.slave_id,a1102_msg.buatrate);
-            }
+                        // Filter events and process them accordingly
+                        if(reg_info.type & (MB_EVENT_HOLDING_REG_WR | MB_EVENT_HOLDING_REG_RD)) {
+                            // Get parameter information from parameter queue
+                            // ESP_LOGI(TAG, "HOLDING %s (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u",
+                            //                 rw_str,
+                            //                 reg_info.time_stamp,
+                            //                 (unsigned)reg_info.mb_offset,
+                            //                 (unsigned)reg_info.type,
+                            //                 (uint32_t)reg_info.address,
+                            //                 (unsigned)reg_info.size);
 
-            // Modify slave id
-            if (reg_info.address == (uint8_t*)&a1102_msg.slave_id && reg_info.type &  MB_EVENT_HOLDING_REG_WR) {
-                ESP_LOGI(TAG,"change slave_id");
-                modbus_reset_flage = 1;
-                set_up_modbus(a1102_msg.slave_id,a1102_msg.buatrate);
-            }
+                            // Modify baud rate
+                            if (reg_info.address == (uint8_t*)&a1102_msg.buatrate && reg_info.type &  MB_EVENT_HOLDING_REG_WR) {
+                                ESP_LOGI(TAG,"change buatrate");
+                                modbus_reset_flage = 1;
+                                set_up_modbus(a1102_msg.slave_id,a1102_msg.buatrate);
+                            }
 
-            // Transfer pictures
+                            // Modify slave id
+                            if (reg_info.address == (uint8_t*)&a1102_msg.slave_id && reg_info.type &  MB_EVENT_HOLDING_REG_WR) {
+                                ESP_LOGI(TAG,"change slave_id");
+                                modbus_reset_flage = 1;
+                                set_up_modbus(a1102_msg.slave_id,a1102_msg.buatrate);
+                            }
 
-            if(reg_info.mb_offset == 0x8006){
-                master_is_reading_flag = true;
-            }
+                            // Transfer pictures
 
-            if (reg_info.mb_offset == 0x8002)
-            {
-                master_is_reading_flag = false;
-                ESP_LOGI(TAG,"reg_info.mb_offset == 0x8002");
-                for (int i = 0; i < 9; i++)
-                {  
-                    temp_data[i] = -1000;
-                }
-                sscma_client_write(client,"AT+INVOKE=1,0,0", 15);
-                sscma_client_invoke(client, -1, false, false);
-            }
+                            if(reg_info.mb_offset == 0x8006){
+                                master_is_reading_flag = true;
+                            }
+
+                            if (reg_info.mb_offset == 0x8002)
+                            {
+                                
+                                master_is_reading_flag = false;
+                                ESP_LOGI(TAG,"reg_info.mb_offset == 0x8002");
+
+                                portENTER_CRITICAL(&param_lock);
+                                for (int i = 0; i < 10; i++) {
+                                    mb_set_uint32_abcd((val_32_arr *)&a1102_msg.result[i], (uint32_t)-1000);
+                                }
+
+                                for (int i = 0; i < 9; i++) {
+                                    mb_set_uint32_abcd((val_32_arr *)&a1102_msg.xy[i], (uint32_t)0);
+                                    mb_set_uint32_abcd((val_32_arr *)&a1102_msg.wh[i], (uint32_t)0);
+                                }
+                                portEXIT_CRITICAL(&param_lock);
+                                // sscma_client_write(client,"AT+INVOKE=1,0,0", 15);
+                                sscma_client_invoke(client, -1, false, false);
+                                printf("sscma_client send ok \r\n");
+                            }
 
 
 
+                        }
+
+                    }
+        }else{
+            vTaskDelay(200);
         }
-
         
+        ESP_LOGI(TAG,"Modbus while.");
+
+
     }
     
     // Destroy of Modbus controller on alarm
@@ -311,8 +289,8 @@ void modbus_task(void *pvParameter){
 
 
 void app_modbus_init(){
-    xTaskCreate(refresh_data,"Update Data Task", 2048, NULL, 3, NULL);
-    xTaskCreate(&modbus_task, "modbus_task", 1024 * 8, NULL, 5,NULL);
+    // xTaskCreate(refresh_data,"Update Data Task", 2048, NULL, 3, NULL);
+    xTaskCreate(&modbus_task, "modbus_task", 1024 * 4, NULL, 5,NULL);
 }
 
 

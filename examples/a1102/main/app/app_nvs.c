@@ -116,6 +116,8 @@ void app_nvs_init(){
     //     ret = nvs_flash_init();
     // }
     // ESP_ERROR_CHECK(ret);
+    g_a1102_param.modbus_p = nvs_modbus_param();
+    g_a1102_param.modle_p.current_modle = Prefab_Models;
     
-    nvs_modbus_param();
+
 }

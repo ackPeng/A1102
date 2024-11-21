@@ -55,10 +55,5 @@ struct himax_module_ai_camera_preview_info
 
 
 void himax_sscam_init();
-void himax_free_image(struct himax_data_image *p_data);
-void himax_data_inference_free(struct himax_data_inference_info *p_inference);
 
-void set_modle(int modle_number);
-int set_modle_confidence(int count, ClassData *data);
-void get_model_info();
 #endif

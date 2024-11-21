@@ -58,89 +58,13 @@
  */
 #define SSCMA_CLIENT_MONITOR_VERSION SSCMA_CLIENT_MONITOR_VERSION_VAL(SSCMA_CLIENT_MONITOR_VERSION_MAJOR, SSCMA_CLIENT_MONITOR_VERSION_MINOR, SSCMA_CLIENT_MONITOR_VERSION_PATCH)
 
-ESP_EVENT_DECLARE_BASE(PARAM_CHANGE_EVENT_BASE);
 
-extern portMUX_TYPE param_lock;
 
 extern sscma_client_io_handle_t io;
 extern sscma_client_handle_t client;
-extern esp_event_loop_handle_t change_param_event_loop;
-extern QueueHandle_t ble_msg_queue;
 
-
-typedef enum{
-   Prefab_Models = 0,
-   Human_Body_Detection, 
-   Meter_Identification, 
-   People_Counting
-}modle_type;
-
-
-
-typedef struct
-{
-   uint16_t  modbus_address;
-   uint32_t modbus_baud;
-}modbus_parm;
-
-typedef struct 
-{
-   modle_type current_modle;
-   char *model_name;
-   char *classes[SSCMA_CLIENT_MODEL_MAX_CLASSES];
-   int classes_count;
-}modle_param;
-
-
-typedef struct 
-{
-   modbus_parm modbus_p;
-   modle_param modle_p;
-}A1102_param;
-
-
-extern A1102_param g_a1102_param;
-
-typedef struct {
-    uint8_t *msg;
-    int size;
-} ble_msg_t;
-
-
-
-typedef enum {
-   PARAM_CHANGE_MODBUS,
-   PARAM_CHANGE_BAUD_RATE,      
-   PARAM_CHANGE_SLAVE_ID,       
-   PARAM_CHANGE_CONFIDENCE,     
-   PARAM_CHANGE_MODEL_TYPE,     
-} param_change_event_id_t;
-
-
-
-typedef struct {
-    char class_name[50];  
-    int confidence;       
-} ClassInfo;
-
-
-typedef struct {
-    int class_count;      
-    ClassInfo *classes;   
-} ClassData;
-
-
-typedef struct {
-   int param_id;             
-   int new_baud_rate;      
-   int new_slave_id;       
-   int new_model_type;     
-   ClassData class_data;
-} param_change_event_data_t;
-
-
-
-const char* model_to_string(modle_type model);
-
+extern bool himax_config;
+extern bool mqtt_connect;
+extern QueueHandle_t queue;
 
 #endif

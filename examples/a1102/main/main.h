@@ -39,16 +39,18 @@
 
 // #include "sscma_client_commands.h"
 
-#include "app_wifi.h"
-#include "app_mqtt.h"
+// #include "app_wifi.h"
+// #include "app_mqtt.h"
 #include "app_nvs.h"
 #include "app_modbus.h"
 
 #include "app_himax.h"
-#include "app_ota.h"
+// #include "app_ota.h"
+#include "app_ble.h"
+#include "at_cmd.h"
+
 
 #define TAG "SenseCAP A1102"
-
 
 
 
