@@ -5,6 +5,7 @@
 #include "nvs_flash.h"
 #include "esp_event.h"
 #include "cJSON.h"
+#include <stdatomic.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -66,15 +67,28 @@ extern sscma_client_io_handle_t io;
 extern sscma_client_handle_t client;
 extern esp_event_loop_handle_t change_param_event_loop;
 extern QueueHandle_t ble_msg_queue;
-
+extern SemaphoreHandle_t xSemaphore;
+extern SemaphoreHandle_t img_memory_lock;
+extern atomic_int img_memory_lock_owner;
+extern int img_get_cnt;
+extern bool model_change_flag;
 
 typedef enum{
-   Prefab_Models = 0,
+   Prefab_Models = 1,
    Human_Body_Detection, 
    Meter_Identification, 
    People_Counting
 }modle_type;
 
+typedef enum{
+  Baud4800 = 0,
+  Baud9600 = 1,
+  Baud14400 = 2,
+  Baud19200 = 3,
+  Baud38400 = 4,
+  Baud57600 = 5,
+  Baud115200 = 6,
+}Baud_rate_type;
 
 
 typedef struct
@@ -88,7 +102,9 @@ typedef struct
    modle_type current_modle;
    char *model_name;
    char *classes[SSCMA_CLIENT_MODEL_MAX_CLASSES];
+   int confidence[SSCMA_CLIENT_MODEL_MAX_CLASSES];
    int classes_count;
+   bool save_pic_flage;
 }modle_param;
 
 
@@ -113,7 +129,9 @@ typedef enum {
    PARAM_CHANGE_BAUD_RATE,      
    PARAM_CHANGE_SLAVE_ID,       
    PARAM_CHANGE_CONFIDENCE,     
-   PARAM_CHANGE_MODEL_TYPE,     
+   PARAM_CHANGE_MODEL_TYPE,
+   PARAM_PREVIEW,
+   PARAM_RESET,
 } param_change_event_id_t;
 
 
@@ -136,11 +154,12 @@ typedef struct {
    int new_slave_id;       
    int new_model_type;     
    ClassData class_data;
+   bool save_pic_flage;
 } param_change_event_data_t;
 
 
 
 const char* model_to_string(modle_type model);
 
-
+void bsp_init(void);
 #endif

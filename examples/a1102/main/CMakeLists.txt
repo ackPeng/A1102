@@ -8,11 +8,9 @@ message(STATUS "APP_SRCS: ${APP_SRCS}")
 idf_component_register(
     SRCS 
         "main.c"
-
         ${APP_SRCS}
     INCLUDE_DIRS
         "."
-        
         ${APP_DIR}
         )
 

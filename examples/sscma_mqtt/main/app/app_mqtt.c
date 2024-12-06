@@ -3,14 +3,12 @@
 
 static const char *TAG = "mqtt_app";
 
-esp_mqtt_client_handle_t mqtt_client;
+
 EventGroupHandle_t s_mqtt_event_group;
 
 
 
-char mqtt_tx_topic[128];
-char mqtt_rx_topic[128];
-char mqtt_client_id[64];
+
 
 esp_err_t read_mqtt_config(sscma_client_mqtt_t *mqtt)
 {
@@ -92,6 +90,12 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             int msg_id = esp_mqtt_client_subscribe(mqtt_client, mqtt_rx_topic, 0);
             mqtt_connect = true;
             ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
+            char at_command[30] = "AT+MQTTSERVERSTA=2\r\n";
+            ESP_LOGW(TAG,"mqtt AT Command: %s", at_command);
+            
+            xSemaphoreTake(xSemaphore, portMAX_DELAY);
+            sscma_client_write(client, at_command, strlen(at_command));
+            xSemaphoreGive(xSemaphore);
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -110,7 +114,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
             ESP_LOGI(TAG, "rev MQTT message: %s", event->data);
+            
+            xSemaphoreTake(xSemaphore, portMAX_DELAY);
             sscma_client_write(client, event->data, event->data_len);
+            xSemaphoreGive(xSemaphore);
             break;
         case MQTT_EVENT_ERROR:
             ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -123,25 +130,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 }
 
 
-void mqtt_send_task(void *param) {
-    char *data;
-
-    while (1) {
-        if (xQueueReceive(queue, &data, portMAX_DELAY) == pdPASS) {
-            int msg_id = esp_mqtt_client_publish(mqtt_client, mqtt_tx_topic, data, strlen(data), 0, 0);
-            if (msg_id < 0)
-            {
-                ESP_LOGE(TAG, "Failed to publish: %d", msg_id);
-            }
-            else
-            {
-                // ESP_LOGI(TAG, "Publish success: %d", strlen(data));
-            }
-            // ESP_LOGI(TAG, "Sent MQTT message: %s", data);
-            free(data);
-        }
-    }
-}
 
 
 void mqtt_initialize()
@@ -162,7 +150,8 @@ void mqtt_initialize()
 
     snprintf(mqtt_tx_topic, sizeof(mqtt_tx_topic), "sscma/v0/%s/tx", mqtt.client_id);
     snprintf(mqtt_rx_topic, sizeof(mqtt_rx_topic), "sscma/v0/%s/rx", mqtt.client_id);
-
+    printf("mqtt_tx_topic = %s\r\n",mqtt_tx_topic);
+    printf("mqtt_rx_topic = %s\r\n",mqtt_rx_topic);
     ESP_LOGI(TAG, "MQTT client id: %s", mqtt_client_id);
 
     esp_mqtt_client_config_t mqtt_cfg = {
@@ -171,13 +160,15 @@ void mqtt_initialize()
         .credentials.client_id = mqtt.client_id,
         .credentials.username = mqtt.username,
         .credentials.authentication.password = mqtt.password,
-        .broker.verification.certificate = mqtt.use_ssl1
+        .broker.verification.certificate = mqtt.use_ssl1,
     };
 
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    if(mqtt_client == NULL){
+        printf("mqtt_client == NULL");
+    }
     esp_mqtt_client_register_event(mqtt_client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
     esp_mqtt_client_start(mqtt_client);
 
-    xTaskCreate(&mqtt_send_task, "mqtt_send_task", 1024 * 2, NULL, 5,NULL);
 
 }

@@ -55,13 +55,29 @@ static void param_change_event_handler(void *handler_arg, esp_event_base_t base,
             
             ESP_LOGI(TAG,"class cnt is %d",data->class_data.class_count);
             print_class_data(&data->class_data);
-            set_modle_confidence(data->class_data.class_count,&data->class_data);
+            set_modle_confidence(data->class_data.class_count,&data->class_data,data->save_pic_flage);
 
             break;
         case PARAM_CHANGE_MODEL_TYPE:
             ESP_LOGI("EVENT_HANDLER", "Model Type Changed: New Value=%d", data->new_model_type);
             set_modle(data->new_model_type);
             g_a1102_param.modle_p.current_modle = data->new_model_type;
+            break;
+        case PARAM_PREVIEW:
+            preview();
+            break;
+        case PARAM_RESET:
+            if(g_a1102_param.modbus_p.modbus_baud != 115200 || g_a1102_param.modbus_p.modbus_address != 1){
+                modbus_reset_flage = 1;
+                restart_flage = true;
+                set_up_modbus(1,115);
+                g_a1102_param.modbus_p.modbus_baud = 115200;
+                g_a1102_param.modbus_p.modbus_address = 1;
+            }
+            
+            set_modle_confidence(0,NULL,0);
+            set_modle(1);
+            g_a1102_param.modle_p.current_modle = 1;
             break;
         default:
             ESP_LOGW("EVENT_HANDLER", "Unknown Event ID: %ld", id);
@@ -106,8 +122,11 @@ void print_memory_usage() {
     ESP_LOGI("MEMORY", "==================================================");
 }
 
+
+
 void app_main(void)
 {
+    bsp_init();
     app_nvs_init();
 
     esp_event_loop_args_t loop_args = {
@@ -123,18 +142,6 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_handler_register_with(change_param_event_loop, PARAM_CHANGE_EVENT_BASE, ESP_EVENT_ANY_ID, param_change_event_handler, NULL));
     
 
-    // wifi_init_sta();
-    // mqtt_initialize();
-
-    // himax_sscam_init();
-
-    // app_modbus_init();
-
-    // ota_init();
-
-    // at_init();
-    
-    
     app_at_cmd_init();
     app_ble_init();
     app_modbus_init();

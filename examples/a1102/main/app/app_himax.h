@@ -59,6 +59,7 @@ void himax_free_image(struct himax_data_image *p_data);
 void himax_data_inference_free(struct himax_data_inference_info *p_inference);
 
 void set_modle(int modle_number);
-int set_modle_confidence(int count, ClassData *data);
+int set_modle_confidence(int count, ClassData *data,bool save_flag);
 void get_model_info();
+void preview();
 #endif

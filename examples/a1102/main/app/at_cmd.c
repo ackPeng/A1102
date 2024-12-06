@@ -25,8 +25,8 @@
 #include "app_ble.h"
 #include "uhash.h"
 #include "at_cmd.h"
-
-
+#include "app_modbus.h"
+#include "app_nvs.h"
 
 
 
@@ -34,6 +34,8 @@
 #define AT_CMD_BUFFER_MAX_LEN    (1024 * 50)  // top limit of the at cmd buffer size, don't be too huge
 #define BLE_MSG_Q_SIZE            10
 
+extern a1102_holding_reg_params_t a1102_msg;
+extern holding_image_params modbus_image;
 
 /*------------------system basic DS-----------------------------------------------------*/
 const char *TAG = "at_cmd";
@@ -97,6 +99,7 @@ esp_err_t send_at_response(const char *message)
         response = malloc(total_length);
         if (response)
         {
+            ESP_LOGI(TAG, "malloc response OK");
             strcpy(response, message);
             strcat(response, suffix);
             size_t newlen = strlen(response);
@@ -108,8 +111,13 @@ esp_err_t send_at_response(const char *message)
         }
     }
 
-    if (response)
+    if (response){
+        ESP_LOGI(TAG, "FREE response ");
+        ESP_LOGI(TAG, "Free heap before free(response): %ld", esp_get_free_heap_size());
         free(response);
+        ESP_LOGI(TAG, "Free heap before free(response): %ld", esp_get_free_heap_size());
+    }
+
     return ret;
 }
 
@@ -145,6 +153,8 @@ void add_command(command_entry **commands, const char *name, at_cmd_error_code (
  */
 void exec_command(command_entry **commands, const char *name, char *params, char query)
 {
+    ESP_LOGI(TAG, "Free heap before exec_command: %ld", esp_get_free_heap_size());
+
     at_cmd_error_code error_code=ESP_OK;
     command_entry *entry;
     char full_command[128];
@@ -201,6 +211,10 @@ void AT_command_reg()
     add_command(&commands, "deviceinfo?", handle_deviceinfo_command);
     add_command(&commands, "devicecfg=", handle_deviceinfo_cfg_command);  //why `devicecfg=` ? this would be history problem
     add_command(&commands, "classconfidence=", handle_classconfidence);
+    add_command(&commands, "preview?", handle_preview_command);
+    add_command(&commands, "reset?", handle_reset_command);
+    add_command(&commands, "DSN=", handle_set_ble_sn_name_command);
+    add_command(&commands, "SN?", handle_get_sn_command);
 
 }
 
@@ -222,6 +236,38 @@ void AT_command_free()
 
 
 
+int baute_rate_to_enum(uint32_t baute_rate){
+    int b_enum = 0;
+    switch (baute_rate)
+    {
+    case 4800:
+        b_enum = 0;
+        break;
+    case 9600:
+        b_enum = 1;
+        break;
+    case 14400:
+        b_enum = 2;
+        break;
+    case 19200:
+        b_enum = 3;
+        break;
+    case 38400:
+        b_enum = 4;
+        break;
+    case 57600:
+        b_enum = 5;
+        break;
+    case 115200:
+        b_enum = 6;
+        break;        
+    default:
+        ESP_LOGI(TAG,"unkown baute_rate");
+        break;
+    }
+    return b_enum;
+}
+
 
 /**
  * @brief Handles the "deviceinfo" command by generating a JSON response with device information.
@@ -235,7 +281,7 @@ void AT_command_free()
  * - data: An object containing:
  *   - baud_rate: "1"
  *   - slave_id: "1"
- *   - Current_Model: "Face"
+ *   - Current_Model: 1
  *
  * The JSON string is then sent as an AT response.
  */
@@ -255,18 +301,27 @@ at_cmd_error_code handle_deviceinfo_command(char *params)
     cJSON *data = cJSON_CreateObject();
 
     cJSON_AddItemToObject(root, "data", data);
-    cJSON_AddNumberToObject(data, "baud_rate", g_a1102_param.modbus_p.modbus_baud);
+    cJSON_AddNumberToObject(data, "baud_rate", baute_rate_to_enum(g_a1102_param.modbus_p.modbus_baud));
     cJSON_AddNumberToObject(data, "slave_id", g_a1102_param.modbus_p.modbus_address);
-    cJSON_AddStringToObject(data, "Current_Model", g_a1102_param.modle_p.model_name);
-
+    cJSON_AddNumberToObject(data, "current_model", g_a1102_param.modle_p.current_modle);
+    cJSON_AddNumberToObject(data, "save", g_a1102_param.modle_p.save_pic_flage);
     
     cJSON *classes_array = cJSON_CreateArray();
     for (int i = 0; i < g_a1102_param.modle_p.classes_count; i++) {
-        cJSON_AddItemToArray(classes_array, cJSON_CreateString(g_a1102_param.modle_p.classes[i]));
+        // 创建每个类的 JSON 对象
+        cJSON *class_obj = cJSON_CreateObject();
+
+        // 将 class 和 conf 添加到对象中
+        cJSON_AddStringToObject(class_obj, "class", g_a1102_param.modle_p.classes[i]);
+        cJSON_AddNumberToObject(class_obj, "conf", g_a1102_param.modle_p.confidence[i]);
+
+        // 将该对象添加到 classes_array 数组中
+        cJSON_AddItemToArray(classes_array, class_obj);
     }
-    cJSON_AddItemToObject(data, "Classes", classes_array);
 
-
+    // 将 classes_array 添加到 data 对象中
+    cJSON_AddItemToObject(data, "classes", classes_array);
+    
     char *json_string = cJSON_Print(root);
 
     ESP_LOGI(TAG, "JSON String in handle_deviceinfo_command: %s\n", json_string);
@@ -281,6 +336,41 @@ at_cmd_error_code handle_deviceinfo_command(char *params)
     cJSON_Delete(root);
     free(json_string);
     return AT_CMD_SUCCESS;
+}
+
+
+uint32_t parse_baute_rate(int baut_numbuer){
+    uint32_t baute_rate = 0;
+    switch (baut_numbuer)
+    {
+    case 0:
+        baute_rate = 4800;
+        break;
+    case 1:
+        baute_rate = 9600;
+        break;
+    case 2: 
+        baute_rate = 14400;
+        break;
+    case 3:
+        baute_rate = 19200;
+        break;
+    case 4:
+        baute_rate = 38400;
+        break;
+    case 5: 
+        baute_rate = 57600;
+        break;
+    case 6: 
+        baute_rate = 115200;
+        break;
+
+    default:
+        ESP_LOGI(TAG,"Unkown baut_numbuer");
+        break;
+    }
+
+    return baute_rate;
 }
 
 at_cmd_error_code handle_deviceinfo_cfg_command(char *params)
@@ -315,9 +405,10 @@ at_cmd_error_code handle_deviceinfo_cfg_command(char *params)
         cJSON *baud_rate = cJSON_GetObjectItem(data, "baud_rate");
         if (cJSON_IsNumber(baud_rate)) {
             printf("Baud Rate: %d\n", baud_rate->valueint);
-            if(baud_rate->valueint != g_a1102_param.modbus_p.modbus_baud){
+            uint32_t parse_b = parse_baute_rate(baud_rate->valueint);
+            if(parse_b != 0 && parse_b != g_a1102_param.modbus_p.modbus_baud){
                 is_need_refresh_bauterate = true;
-                new_baud_rate = baud_rate->valueint;
+                new_baud_rate = parse_b;
             }
         }
 
@@ -332,7 +423,7 @@ at_cmd_error_code handle_deviceinfo_cfg_command(char *params)
         }
 
     
-        cJSON *current_model = cJSON_GetObjectItem(data, "model");
+        cJSON *current_model = cJSON_GetObjectItem(data, "current_model");
         if (cJSON_IsNumber(current_model)) {
             printf("Current Model: %d\n", current_model->valueint);
             if(current_model->valueint != g_a1102_param.modle_p.current_modle){
@@ -350,36 +441,8 @@ at_cmd_error_code handle_deviceinfo_cfg_command(char *params)
 
     cJSON_Delete(json);
     
-    cJSON *root = cJSON_CreateObject();
-    if (root == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to create JSON object\n");
-        return ERROR_CMD_JSON_CREATE;
-    }
-    cJSON *data_rep = cJSON_CreateObject();
-    if (data_rep == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to create JSON object\n");
-        cJSON_Delete(root);
-        return ERROR_CMD_JSON_CREATE;
-    }
-    cJSON_AddStringToObject(root, "name", "devicecfg");
-    cJSON_AddNumberToObject(root, "code", 0);
-    char *json_string = cJSON_Print(root);
-    ESP_LOGD(TAG, "JSON String in device cfg command: %s\n", json_string);
-    esp_err_t send_result = send_at_response(json_string);
-    if (send_result != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to send AT response\n");
-        cJSON_Delete(root);
-        free(json_string);
-        return ERROR_CMD_RESPONSE;
-    }
-    cJSON_Delete(root);
-    free(json_string);
+    model_change_flag = false;
 
-
-    
     if(  is_need_refresh_slave_id
         || is_need_refresh_bauterate
         || is_need_refresh_modle_type)
@@ -414,6 +477,53 @@ at_cmd_error_code handle_deviceinfo_cfg_command(char *params)
     }else{
         ESP_LOGI(TAG, "no change");
     }
+
+
+    vTaskDelay(3000);
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create JSON object\n");
+        return ERROR_CMD_JSON_CREATE;
+    }
+    cJSON *data_rep = cJSON_CreateObject();
+    if (data_rep == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create JSON object\n");
+        cJSON_Delete(root);
+        return ERROR_CMD_JSON_CREATE;
+    }
+
+    cJSON_AddStringToObject(root, "name", "devicecfg");
+    if(is_need_refresh_modle_type){
+        ESP_LOGI(TAG, "is_need_refresh_modle_type = true\n");
+        if(model_change_flag){
+            ESP_LOGI(TAG, "model_change_flag = true\n");
+            cJSON_AddNumberToObject(root, "code", 0);
+        }else{
+            ESP_LOGI(TAG, "model_change_flag = false\n");
+            cJSON_AddNumberToObject(root, "code", 1);
+        }
+    }else{
+        ESP_LOGI(TAG, "is_need_refresh_modle_type = FALSE\n");
+        cJSON_AddNumberToObject(root, "code", 0);
+    }
+
+
+    char *json_string = cJSON_Print(root);
+    ESP_LOGD(TAG, "JSON String in device cfg command: %s\n", json_string);
+    esp_err_t send_result = send_at_response(json_string);
+    if (send_result != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send AT response\n");
+        cJSON_Delete(root);
+        free(json_string);
+        return ERROR_CMD_RESPONSE;
+    }
+    cJSON_Delete(root);
+    free(json_string);
+
     return AT_CMD_SUCCESS;
 }
 
@@ -426,6 +536,29 @@ at_cmd_error_code handle_classconfidence(char *params){
         printf("Failed to parse JSON.\n");
         return -1;
     }
+
+
+    // 获取 "save" 字段
+    cJSON *code_item = cJSON_GetObjectItem(root, "save");
+    if (code_item == NULL) {
+        printf("Error: 'code' field not found in the JSON\n");
+        cJSON_Delete(root);
+        return -1;
+    }
+
+    // 判断 "save" 字段是否为 0
+    if (cJSON_IsNumber(code_item)) {
+        int code_value = code_item->valueint; // 获取 "save" 字段的整数值
+        if (code_value == 0) {
+            event_data.save_pic_flage = false;
+        } else {
+            event_data.save_pic_flage = true;
+        }
+    } else {
+        printf("Error: 'code' field is not a number\n");
+    }
+
+
 
     cJSON *data_array = cJSON_GetObjectItem(root, "data");
     if (!cJSON_IsArray(data_array)) {
@@ -486,6 +619,245 @@ at_cmd_error_code handle_classconfidence(char *params){
     cJSON_Delete(root);
     free(json_string);
 
+
+    return AT_CMD_SUCCESS;
+}
+
+
+
+at_cmd_error_code handle_preview_command(char *params) {
+    (void)params; // Prevent unused parameter warning
+  
+
+    ESP_LOGI(TAG, "handle_preview_command\n");
+
+    xSemaphoreTake(img_memory_lock, portMAX_DELAY);
+    atomic_store(&img_memory_lock_owner, 1);
+    
+    xSemaphoreTake(xSemaphore, 0);
+    img_get_cnt = 0;
+    esp_event_post_to(change_param_event_loop, PARAM_CHANGE_EVENT_BASE, PARAM_PREVIEW, NULL, 0, portMAX_DELAY);
+
+    ESP_LOGI(TAG, "wait himax img give xSemaphore\n");
+    if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
+
+        vTaskDelay(1000);//等待内存释放完
+        // 创建 JSON 根对象
+        cJSON *root = cJSON_CreateObject();
+        if (root == NULL) {
+            xSemaphoreGive(xSemaphore); // 确保信号量释放
+            xSemaphoreGive(img_memory_lock);
+            return ERROR_CMD_JSON_CREATE;
+        }
+
+
+        // 添加 "name" 和 "code" 键
+        cJSON_AddStringToObject(root, "name", "preview");
+        cJSON_AddNumberToObject(root, "code", 0);
+
+        // 创建 "data" 对象
+        cJSON *data_object = cJSON_CreateObject();
+        if (data_object == NULL) {
+            cJSON_Delete(root);
+            xSemaphoreGive(xSemaphore);
+            xSemaphoreGive(img_memory_lock);
+            return ERROR_CMD_JSON_CREATE;
+        }
+     
+        // 创建 result 数组
+        cJSON *result_array = cJSON_CreateArray();
+        if (result_array == NULL) {
+            cJSON_Delete(data_object);
+            cJSON_Delete(root);
+            xSemaphoreGive(xSemaphore);
+            xSemaphoreGive(img_memory_lock);
+            return ERROR_CMD_JSON_CREATE;
+        }
+  
+        // 添加 result 数据
+        portENTER_CRITICAL(&param_lock);
+        for (int i = 0; i < 10; i++) {
+            cJSON *value = cJSON_CreateNumber(mb_get_uint32_abcd((val_32_arr *)&a1102_msg.result[i]));
+            if (value == NULL) {
+                portEXIT_CRITICAL(&param_lock);
+                cJSON_Delete(result_array);
+                cJSON_Delete(data_object);
+                cJSON_Delete(root);
+                xSemaphoreGive(xSemaphore);
+                xSemaphoreGive(img_memory_lock);
+                return ERROR_CMD_JSON_CREATE;
+            }
+            cJSON_AddItemToArray(result_array, value);
+        }
+        portEXIT_CRITICAL(&param_lock);
+        cJSON_AddItemToObject(data_object, "result", result_array);
+
+        // 检查 image_string 的合法性
+        modbus_image.image[modbus_image.image_size] = '\0';
+        char *image_string = (char *)modbus_image.image;
+                    // ESP_LOGI(TAG, "modbus_image.image = %s\r\n", image_string);
+        if (cJSON_AddStringToObject(data_object, "image", image_string) == NULL) {
+            ESP_LOGE(TAG, "Failed to add image to JSON object");
+            cJSON_Delete(result_array);
+            cJSON_Delete(data_object);
+            cJSON_Delete(root);
+            xSemaphoreGive(xSemaphore);
+            xSemaphoreGive(img_memory_lock);
+            return ERROR_CMD_JSON_CREATE;
+        }
+
+        
+
+        // 添加 "data" 对象到根对象
+        cJSON_AddItemToObject(root, "data", data_object);
+
+        // 转换为 JSON 字符串
+        char *json_string = cJSON_Print(root);
+        if (json_string == NULL) {
+            ESP_LOGE(TAG, "Failed to get json_string");
+            cJSON_Delete(root);
+            ESP_LOGI(TAG, "Free heap before cJSON_Delete(root) %ld", esp_get_free_heap_size());
+            xSemaphoreGive(xSemaphore);
+            return ERROR_CMD_JSON_CREATE;
+        }
+        xSemaphoreGive(img_memory_lock);
+        atomic_store(&img_memory_lock_owner, 0);
+        // 输出和发送 JSON 字符串
+        ESP_LOGI(TAG, "Free heap size: %ld", esp_get_free_heap_size());
+        // printf("handle_preview_command json: %s\r\n", json_string);
+        esp_err_t send_result = send_at_response(json_string);
+        free(json_string); // 释放 JSON 字符串
+        cJSON_Delete(root); // 删除 JSON 对象
+
+        if (send_result != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to send AT response");
+            xSemaphoreGive(xSemaphore);
+            return ERROR_CMD_RESPONSE;
+        }
+
+        xSemaphoreGive(xSemaphore);
+        return AT_CMD_SUCCESS;
+    }
+
+    xSemaphoreGive(xSemaphore);
+    return ERROR_CMD_RESPONSE;
+}
+
+at_cmd_error_code handle_reset_command(char *params) {
+    (void)params; // Prevent unused parameter warning
+    ESP_LOGI(TAG, "handle_reset_command\n");
+
+    ESP_ERROR_CHECK(esp_event_post_to(change_param_event_loop, PARAM_CHANGE_EVENT_BASE, PARAM_RESET, NULL, 0, portMAX_DELAY));
+
+    vTaskDelay(3000);
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create JSON object\n");
+        return ERROR_CMD_JSON_CREATE;
+    }
+    cJSON_AddStringToObject(root, "name", "reset");
+    cJSON_AddNumberToObject(root, "code", 0);
+
+    char *json_string = cJSON_Print(root);
+    ESP_LOGD(TAG, "JSON String in device cfg command: %s\n", json_string);
+    esp_err_t send_result = send_at_response(json_string);
+    if (send_result != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send AT response\n");
+        cJSON_Delete(root);
+        free(json_string);
+        return ERROR_CMD_RESPONSE;
+    }
+    cJSON_Delete(root);
+    free(json_string);
+
+    return AT_CMD_SUCCESS;
+}
+
+at_cmd_error_code handle_set_ble_sn_name_command(char *params){
+
+    // 解析 JSON 字符串
+    cJSON *root = cJSON_Parse(params);
+    if (root == NULL) {
+        printf("Failed to parse JSON\n");
+        return -1;
+    }
+
+    // 获取 "DSN" 的值
+    cJSON *dsn_item = cJSON_GetObjectItem(root, "DSN");
+    if (dsn_item != NULL && cJSON_IsString(dsn_item)) {
+        printf("DSN: %s\n", dsn_item->valuestring);
+        esp_err_t ret;
+        ret = set_sn(dsn_item->valuestring);\
+        if(ret != ESP_OK){
+            cJSON_Delete(root);
+            return ERROR_CMD_RESPONSE;
+        }
+    } else {
+        printf("Failed to get 'DSN' value or it is not a string\n");
+    }
+    // 释放 JSON 对象
+    cJSON_Delete(root);
+
+
+    root = cJSON_CreateObject();
+    if (root == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create JSON object\n");
+        return ERROR_CMD_JSON_CREATE;
+    }
+    cJSON *data_rep = cJSON_CreateObject();
+    if (data_rep == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create JSON object\n");
+        cJSON_Delete(root);
+        return ERROR_CMD_JSON_CREATE;
+    }
+    cJSON_AddStringToObject(root, "name", "DSN");
+    cJSON_AddNumberToObject(root, "code", 0);
+    char *json_string = cJSON_Print(root);
+    ESP_LOGD(TAG, "JSON String in device cfg command: %s\n", json_string);
+    esp_err_t send_result = send_at_response(json_string);
+    if (send_result != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send AT response\n");
+        cJSON_Delete(root);
+        free(json_string);
+        return ERROR_CMD_RESPONSE;
+    }
+    cJSON_Delete(root);
+    free(json_string);
+
+    return AT_CMD_SUCCESS;
+
+}
+
+at_cmd_error_code handle_get_sn_command(char *params){
+    (void)params;
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create JSON object\n");
+        return ERROR_CMD_JSON_CREATE;
+    }
+    cJSON_AddStringToObject(root, "name", "SN");
+    cJSON_AddNumberToObject(root, "code", 0);
+    
+    cJSON_AddStringToObject(root, "data", get_SN(0));
+    char *json_string = cJSON_Print(root);
+    ESP_LOGD(TAG, "JSON String in device cfg command: %s\n", json_string);
+    esp_err_t send_result = send_at_response(json_string);
+    if (send_result != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to send AT response\n");
+        cJSON_Delete(root);
+        free(json_string);
+        return ERROR_CMD_RESPONSE;
+    }
+    cJSON_Delete(root);
+    free(json_string);
 
     return AT_CMD_SUCCESS;
 }
@@ -669,7 +1041,7 @@ void app_at_cmd_init()
     ble_msg_queue = xQueueCreate(BLE_MSG_Q_SIZE, sizeof(ble_msg_t));
 
     // init at cmd processing task
-    const uint32_t stack_size = 5 * 1024;
+    const uint32_t stack_size = 6 * 1024;
     StackType_t *task_stack1 = (StackType_t *)malloc(stack_size * sizeof(StackType_t));
     StaticTask_t *task_tcb1 = heap_caps_calloc(1, sizeof(StaticTask_t), MALLOC_CAP_INTERNAL);
     xTaskCreateStatic(__at_cmd_proc_task, "at_cmd", stack_size, NULL, 9, task_stack1, task_tcb1);

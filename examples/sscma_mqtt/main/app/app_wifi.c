@@ -21,7 +21,9 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
         }
         else
         {
+            wifi_connect = false;
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+           
         }
         ESP_LOGI(TAG, "connect to the AP fail");
     }
@@ -30,7 +32,9 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
+        wifi_connect = true;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
     }
 }
 
@@ -67,6 +71,8 @@ esp_err_t read_wifi_config(sscma_client_wifi_t *wifi)
     nvs_close(my_handle);
     return ESP_OK;
 }
+
+
 
 
 
@@ -116,6 +122,41 @@ void wifi_init_sta()
     if (bits & WIFI_CONNECTED_BIT)
     {
         ESP_LOGI(TAG, "connected to ap SSID: %s", wifi.ssid);
+
+        esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"); // 获取 WiFi STA 接口
+        if (netif == NULL) {
+            ESP_LOGE("NETWORK", "Failed to get esp_netif handle");
+            return;
+        }
+
+        esp_netif_ip_info_t ip_info;
+        esp_err_t ret = esp_netif_get_ip_info(netif, &ip_info);
+        if (ret != ESP_OK) {
+            ESP_LOGE("NETWORK", "Failed to get IP information: %s", esp_err_to_name(ret));
+            return;
+        }
+
+        char at[30] = "AT+WIFISTA=2\r\n";
+        
+        sscma_client_write(client, at, strlen(at));
+
+        char at_command[128];
+        // 格式化 AT 指令
+        snprintf(at_command, sizeof(at_command), "AT+WIFIIN4=\"" IPSTR "\",\"" IPSTR "\",\"" IPSTR "\"\r\n",
+                IP2STR(&ip_info.ip), IP2STR(&ip_info.netmask), IP2STR(&ip_info.gw));
+
+        ESP_LOGW(TAG,"AT Command: %s", at_command);
+        sscma_client_reply_t reply;
+        sscma_client_request(client, at_command, &reply, true, CMD_WAIT_DELAY);
+
+        if (reply.payload != NULL)
+        {
+            printf("reply is %s\r\n",reply.data);
+
+            sscma_client_reply_clear(&reply);
+        }
+        
+
     }
     else if (bits & WIFI_FAIL_BIT)
     {

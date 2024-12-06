@@ -96,6 +96,10 @@ void exec_command(command_entry **commands, const char *name, char *params, char
 at_cmd_error_code handle_deviceinfo_command();  
 at_cmd_error_code handle_classconfidence(char *params);
 at_cmd_error_code handle_deviceinfo_cfg_command(char *params);  
+at_cmd_error_code handle_preview_command(char *params);
+at_cmd_error_code handle_reset_command(char *params);
+at_cmd_error_code handle_set_ble_sn_name_command(char *params);
+at_cmd_error_code handle_get_sn_command(char *params);
 
 void app_at_cmd_init();
 

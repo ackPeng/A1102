@@ -61,6 +61,77 @@ esp_err_t write_modbus_baud(uint32_t modbus_baud)
 }
 
 
+esp_err_t set_sn(char *sn_number){
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+
+    err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE("NVS", "Failed to open NVS handle");
+        return err;
+    }
+    
+    err = nvs_set_str(nvs_handle, NVS_KEY_BLE_SN, sn_number);
+    ESP_ERROR_CHECK(err);
+
+    err = nvs_commit(nvs_handle);
+    ESP_ERROR_CHECK(err);
+
+    nvs_close(nvs_handle);
+
+    return err;
+}
+
+char* get_SN(bool type)
+{
+    nvs_handle_t nvs_handle;
+    esp_err_t err;
+
+    err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE("NVS", "Failed to open NVS handle");
+        return NULL;
+    }
+    char nvs_key[10];
+
+    if(type){
+        strcpy(nvs_key, NVS_KEY_BLE_SN); 
+    }else{
+        strcpy(nvs_key, NVS_KEY_DEVICE_SN); 
+    }
+
+    // 读取字符串
+    size_t required_size;
+    err = nvs_get_str(nvs_handle, nvs_key, NULL, &required_size);
+    if (err == ESP_OK) {
+        // 动态分配内存来存储字符串
+        char *buffer = (char *)malloc(required_size);  // 使用 malloc 分配内存
+        if (buffer == NULL) {
+            ESP_LOGE("NVS", "Failed to allocate memory for SN");
+            nvs_close(nvs_handle);
+            return NULL;
+        }
+        
+        err = nvs_get_str(nvs_handle, nvs_key, buffer, &required_size);
+        if (err == ESP_OK) {
+            ESP_LOGI("NVS", "Read string: %s", buffer);
+        } else {
+            ESP_LOGE("NVS", "Failed to read string from NVS");
+            free(buffer);  // 释放内存
+            nvs_close(nvs_handle);
+            return NULL;
+        }
+
+        nvs_close(nvs_handle);
+        return buffer;  // 返回动态分配的字符串
+    } else {
+        ESP_LOGE("NVS", "Failed to get string size from NVS");
+        nvs_close(nvs_handle);
+        return NULL;
+    }
+}
+
+
 modbus_parm nvs_modbus_param()
 {
     esp_err_t ret = nvs_flash_init();
@@ -104,20 +175,14 @@ modbus_parm nvs_modbus_param()
     ret = nvs_commit(my_handle);
     ESP_ERROR_CHECK(ret);
 
+    nvs_close(my_handle);
+
     printf("current param is %d  %ld\r\n",current_param.modbus_address,current_param.modbus_baud);
     return current_param;
 }
 
 
 void app_nvs_init(){
-    // esp_err_t ret = nvs_flash_init();
-    // if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    //     ESP_ERROR_CHECK(nvs_flash_erase());
-    //     ret = nvs_flash_init();
-    // }
-    // ESP_ERROR_CHECK(ret);
     g_a1102_param.modbus_p = nvs_modbus_param();
     g_a1102_param.modle_p.current_modle = Prefab_Models;
-    
-
 }

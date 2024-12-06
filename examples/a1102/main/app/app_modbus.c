@@ -9,8 +9,12 @@ mb_communication_info_t comm_info; // Modbus communication parameters
 mb_register_area_descriptor_t reg_area; // Modbus register area descriptor structure
 void* mbc_slave_handler = NULL;
 
-bool master_is_reading_flag = false;
 
+TickType_t start_time;
+const TickType_t max_hold_time = pdMS_TO_TICKS(2000);
+const TickType_t img_max_hold_time = pdMS_TO_TICKS(15000);
+bool in_read =false;
+bool in_read_img = false;
 bool restart_flage = false;
 
 static const char *TAG = "app_modbus";
@@ -21,6 +25,7 @@ static void init_a1102_msg(uint16_t new_slava_id,uint16_t new_baudrate){
 
     memset(&modbus_image.image,0,sizeof(modbus_image.image));
     modbus_image.reg_length = 0;
+    modbus_image.image_size = 0;
     portENTER_CRITICAL(&param_lock);
    
     mb_set_uint16_ab((val_16_arr *)&a1102_msg.slave_id, (uint16_t)new_slava_id);
@@ -205,6 +210,9 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
 
 void modbus_task(void *pvParameter){
     set_up_modbus(1,115);
+
+
+
     while (1)
     {
         if(restart_flage != true)
@@ -218,13 +226,13 @@ void modbus_task(void *pvParameter){
                         // Filter events and process them accordingly
                         if(reg_info.type & (MB_EVENT_HOLDING_REG_WR | MB_EVENT_HOLDING_REG_RD)) {
                             // Get parameter information from parameter queue
-                            // ESP_LOGI(TAG, "HOLDING %s (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u",
-                            //                 rw_str,
-                            //                 reg_info.time_stamp,
-                            //                 (unsigned)reg_info.mb_offset,
-                            //                 (unsigned)reg_info.type,
-                            //                 (uint32_t)reg_info.address,
-                            //                 (unsigned)reg_info.size);
+                            ESP_LOGI(TAG, "HOLDING %s (%" PRIu32 " us), ADDR:%u, TYPE:%u, INST_ADDR:0x%" PRIx32 ", SIZE:%u",
+                                            rw_str,
+                                            reg_info.time_stamp,
+                                            (unsigned)reg_info.mb_offset,
+                                            (unsigned)reg_info.type,
+                                            (uint32_t)reg_info.address,
+                                            (unsigned)reg_info.size);
 
                             // Modify baud rate
                             if (reg_info.address == (uint8_t*)&a1102_msg.buatrate && reg_info.type &  MB_EVENT_HOLDING_REG_WR) {
@@ -242,31 +250,68 @@ void modbus_task(void *pvParameter){
 
                             // Transfer pictures
 
-                            if(reg_info.mb_offset == 0x8006){
-                                master_is_reading_flag = true;
-                            }
 
                             if (reg_info.mb_offset == 0x8002)
                             {
-                                
-                                master_is_reading_flag = false;
-                                ESP_LOGI(TAG,"reg_info.mb_offset == 0x8002");
+                                if (xSemaphoreTake(img_memory_lock, portMAX_DELAY) == pdTRUE){
+                                    atomic_store(&img_memory_lock_owner, 2);
+                                    start_time = xTaskGetTickCount();
+                                    in_read = true;
+                                    ESP_LOGI(TAG,"reg_info.mb_offset == 0x8002");
 
-                                portENTER_CRITICAL(&param_lock);
-                                for (int i = 0; i < 10; i++) {
-                                    mb_set_uint32_abcd((val_32_arr *)&a1102_msg.result[i], (uint32_t)-1000);
-                                }
+                                    portENTER_CRITICAL(&param_lock);
+                                    for (int i = 0; i < 10; i++) {
+                                        mb_set_uint32_abcd((val_32_arr *)&a1102_msg.result[i], (uint32_t)-1000);
+                                    }
 
-                                for (int i = 0; i < 9; i++) {
-                                    mb_set_uint32_abcd((val_32_arr *)&a1102_msg.xy[i], (uint32_t)0);
-                                    mb_set_uint32_abcd((val_32_arr *)&a1102_msg.wh[i], (uint32_t)0);
+                                    for (int i = 0; i < 9; i++) {
+                                        mb_set_uint32_abcd((val_32_arr *)&a1102_msg.xy[i], (uint32_t)0);
+                                        mb_set_uint32_abcd((val_32_arr *)&a1102_msg.wh[i], (uint32_t)0);
+                                    }
+
+                                    modbus_image.image_size = 0;
+                                    modbus_image.reg_length = 0;
+                                    memset(modbus_image.image, '\0', sizeof(modbus_image.image));
+                                    
+                                    portEXIT_CRITICAL(&param_lock);
+
+                                    img_get_cnt = 0;
+                                    // sscma_client_write(client,"AT+INVOKE=1,0,0", 15);
+                                    // sscma_client_invoke(client, -1, false, false);
+                                    sscma_client_invoke(client, 1, 0, 1);
+                                    vTaskDelay(100);
+                                    sscma_client_invoke(client, 1, 0, 1);
+                                    printf("sscma_client send ok \r\n");
                                 }
-                                portEXIT_CRITICAL(&param_lock);
-                                // sscma_client_write(client,"AT+INVOKE=1,0,0", 15);
-                                sscma_client_invoke(client, -1, false, false);
-                                printf("sscma_client send ok \r\n");
                             }
 
+                            if(reg_info.mb_offset ==  0x8006){
+                                in_read_img = true;
+                            }
+
+                            if(in_read){
+                                if(in_read_img){
+                                    // printf("reg_info.mb_offset = %d \r\n",reg_info.mb_offset);
+                                    // printf("32775 + modbus_image.reg_length = %d \r\n",32775 + modbus_image.reg_length);
+                                    if((reg_info.mb_offset == 32775 + modbus_image.reg_length - modbus_image.reg_length % 125) || (xTaskGetTickCount() - start_time > img_max_hold_time)){
+                                        atomic_store(&img_memory_lock_owner, 0);
+                                        xSemaphoreGive(img_memory_lock);
+                                        in_read_img = false;
+                                        in_read = false;
+
+                                        printf("in_read_img xSemaphoreGive(img_memory_lock) \r\n");
+                                    }
+                                }else{
+                                    if((reg_info.mb_offset == 0x1000) || (xTaskGetTickCount() - start_time > max_hold_time)){
+                                        atomic_store(&img_memory_lock_owner, 0);
+                                        xSemaphoreGive(img_memory_lock);
+                                        in_read_img = false;
+                                        in_read = false;
+                                        printf(" in_read xSemaphoreGive(img_memory_lock) \r\n");
+                                    }
+                                }
+
+                            }
 
 
                         }
@@ -287,10 +332,37 @@ void modbus_task(void *pvParameter){
     ESP_ERROR_CHECK(mbc_slave_destroy());
 }
 
+void modbus_statu(void *pvParameter){
+    while (1)
+    {
+        vTaskDelay(500);
+        if(atomic_load(&img_memory_lock_owner) != 2){
+            continue;
+        }
 
+        if(in_read && in_read_img && (xTaskGetTickCount() - start_time > img_max_hold_time)){
+            atomic_store(&img_memory_lock_owner, 0);
+            xSemaphoreGive(img_memory_lock);
+            in_read_img = false;
+            in_read = false;
+            printf("modbus_statu xSemaphoreGive(img_memory_lock) \r\n");
+        
+        }
+
+        if(in_read && !in_read_img && (xTaskGetTickCount() - start_time > max_hold_time)){
+            atomic_store(&img_memory_lock_owner, 0);
+            xSemaphoreGive(img_memory_lock);
+            in_read = false;
+            printf("modbus_statu in_read xSemaphoreGive(img_memory_lock) \r\n");
+        }
+
+    }
+    
+}
 void app_modbus_init(){
-    // xTaskCreate(refresh_data,"Update Data Task", 2048, NULL, 3, NULL);
+    
     xTaskCreate(&modbus_task, "modbus_task", 1024 * 4, NULL, 5,NULL);
+    xTaskCreate(modbus_statu,"modbus_statu", 1024, NULL, 4, NULL);
 }
 
 

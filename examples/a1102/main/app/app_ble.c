@@ -1,7 +1,8 @@
 #include "app_ble.h"
+#include "app_nvs.h"
 
 #define TAG "A1102 NimBLE_GATT_Server"
-#define DEVICE_NAME "114992872223300112-A1102"
+
 
 
 static volatile atomic_bool g_ble_connected = ATOMIC_VAR_INIT(false);
@@ -275,13 +276,30 @@ int gap_init(void) {
     /* Call NimBLE GAP initialization API */
     ble_svc_gap_init();
 
-    /* Set GAP device name */
-    rc = ble_svc_gap_device_name_set(DEVICE_NAME);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "failed to set device name to %s, error code: %d",
-                 DEVICE_NAME, rc);
-        return rc;
-    }
+    // char name[40];
+    // char *sn = get_SN(1);
+    // if (sn != NULL)
+    // {
+    //     strcpy(name, sn);
+    //     ESP_LOGI(TAG, "SN name =  %s,len = %d",name,strlen(name));
+    //     strcat(name, "-A1102");
+    //     ESP_LOGI(TAG, "NEW  name =  %s,len = %d",name,strlen(name));
+    //     free(sn);
+    // }else{
+    //     strcpy(name, "Default");
+    //     ESP_LOGI(TAG, "SN name =  %s,len = %d",name,strlen(name));
+    //     strcat(name, "-A1102");
+    //     ESP_LOGI(TAG, "NEW  name =  %s,len = %d",name,strlen(name));
+    // }
+    
+
+    // /* Set GAP device name */
+    // rc = ble_svc_gap_device_name_set(name);
+    // if (rc != 0) {
+    //     ESP_LOGE(TAG, "failed to set device name to %s, error code: %d",
+    //              sn, rc);
+    //     return rc;
+    // }
     return rc;
 }
 
@@ -487,12 +505,40 @@ int app_ble_get_current_mtu(void)
 }
 
 static void start_advertising(void) {
+
+
+    char s_name[40];
     /* Local variables */
     int rc = 0;
     const char *name;
     struct ble_hs_adv_fields adv_fields = {0};
     struct ble_hs_adv_fields rsp_fields = {0};
     struct ble_gap_adv_params adv_params = {0};
+
+
+    char *sn = get_SN(1);
+    if (sn != NULL)
+    {
+        strcpy(s_name, sn);
+        ESP_LOGI(TAG, "SN name =  %s,len = %d",s_name,strlen(s_name));
+        strcat(s_name, "-A1102");
+        ESP_LOGI(TAG, "NEW  name =  %s,len = %d",s_name,strlen(s_name));
+        free(sn);
+    }else{
+        strcpy(s_name, "Default");
+        ESP_LOGI(TAG, "SN name =  %s,len = %d",s_name,strlen(s_name));
+        strcat(s_name, "-A1102");
+        ESP_LOGI(TAG, "NEW  name =  %s,len = %d",s_name,strlen(s_name));
+    }
+    
+
+    /* Set GAP device name */
+    rc = ble_svc_gap_device_name_set(s_name);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "failed to set device name to %s, error code: %d",
+                 sn, rc);
+        return;
+    }
 
     /* Set advertising flags */
     adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
@@ -512,9 +558,9 @@ static void start_advertising(void) {
     }
 
     /* Set device name */
-    name = ble_svc_gap_device_name();
-    rsp_fields.name = (uint8_t *)name;
-    rsp_fields.name_len = strlen(name);
+    // name = ble_svc_gap_device_name();
+    rsp_fields.name = (uint8_t *)s_name;
+    rsp_fields.name_len = strlen(s_name);
     rsp_fields.name_is_complete = 1;
 
     
@@ -705,16 +751,16 @@ esp_err_t app_ble_send_indicate(uint8_t *data, int len)
 
     const int wait_step_climb = 10, wait_max = 10000;  //ms
     int wait = 0, wait_step = wait_step_climb, wait_sum = 0;  //ms
-    const int retry_max = 10;
+    const int retry_max = 20;
     int retry_cnt = 0;
     while (len > 0 && atomic_load(&g_ble_connected)) {
         txlen = MIN(len, mtu - 3);
         txom = ble_hs_mbuf_from_flat(data + txed_len, txlen);
-        ESP_LOGD(TAG, "after mbuf alloc, os_msys_count: %d, os_msys_num_free: %d", os_msys_count(), os_msys_num_free());
+        ESP_LOGI(TAG, "after mbuf alloc, os_msys_count: %d, os_msys_num_free: %d", os_msys_count(), os_msys_num_free());
         if (!txom) {
             wait += wait_step;
             wait_step += wait_step_climb;
-            ESP_LOGD(TAG, "app_ble_send_indicate, mbuf alloc failed, wait %dms", wait);
+            ESP_LOGI(TAG, "app_ble_send_indicate, mbuf alloc failed, wait %dms", wait);
             vTaskDelay(pdMS_TO_TICKS(wait));
             wait_sum += wait;
             if (wait_sum > wait_max) {
@@ -726,11 +772,12 @@ esp_err_t app_ble_send_indicate(uint8_t *data, int len)
         }
         wait = wait_sum = 0;
         wait_step = wait_step_climb;
-        
+
+        vTaskDelay(pdMS_TO_TICKS(50));  
         rc = ble_gatts_indicate_custom(read_param_chr_conn_handle, read_param_chr_val_handle, txom);
         //txom will be consumed anyways, we don't need to release it here.
         if (rc != 0) {
-            ESP_LOGD(TAG, "ble_gatts_indicate_custom failed (rc=%d, mtu=%d, txlen=%d, remain_len=%d), retry ...", rc, mtu, txlen, len);
+            ESP_LOGI(TAG, "ble_gatts_indicate_custom failed (rc=%d, mtu=%d, txlen=%d, remain_len=%d), retry ...", rc, mtu, txlen, len);
             retry_cnt++;
             if (retry_cnt > retry_max) {
                 ESP_LOGE(TAG, "ble_gatts_indicate_custom failed overall after %d retries!!!", retry_max);

@@ -31,6 +31,7 @@ typedef struct{
 typedef struct 
 {
     uint16_t reg_length;
+    uint16_t image_size;
     uint16_t image[20480]
    
 }holding_image_params;
@@ -38,7 +39,6 @@ typedef struct
 
 
 
-extern bool master_is_reading_flag;
 
 void app_modbus_init();
 void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate);

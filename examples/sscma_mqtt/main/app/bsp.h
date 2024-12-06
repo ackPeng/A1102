@@ -18,7 +18,7 @@
 #include "sscma_client_io.h"
 #include "sscma_client_ops.h"
 #include "sscma_client_commands.h"
-
+#include "mqtt_client.h"
 #define NVS_NAMESPACE "storage"
 #define NVS_KEY_SSID "wifi_ssid"
 #define NVS_KEY_PASSWORD "wifi_password"
@@ -58,13 +58,40 @@
  */
 #define SSCMA_CLIENT_MONITOR_VERSION SSCMA_CLIENT_MONITOR_VERSION_VAL(SSCMA_CLIENT_MONITOR_VERSION_MAJOR, SSCMA_CLIENT_MONITOR_VERSION_MINOR, SSCMA_CLIENT_MONITOR_VERSION_PATCH)
 
+// 定义事件标志
+#define PRODUCER_1_READY  (1 << 0)
+#define PRODUCER_2_READY  (1 << 1)
+#define PRODUCER_3_READY  (1 << 2)
 
 
 extern sscma_client_io_handle_t io;
 extern sscma_client_handle_t client;
+extern esp_mqtt_client_handle_t mqtt_client;
 
 extern bool himax_config;
 extern bool mqtt_connect;
-extern QueueHandle_t queue;
+extern bool wifi_connect;
+
+extern SemaphoreHandle_t xSemaphore;
+extern SemaphoreHandle_t msg_mutex;
+
+extern EventGroupHandle_t event_group;
+
+
+extern char wifi_ssid[100];
+extern char wifi_passwd[100];
+
+extern char mqtt_username[100];
+extern char mqtt_password[100];
+extern char mqtt_address[100];
+extern char mqtt_clientid[100];
+
+extern char mqtt_tx_topic[128];
+extern char mqtt_rx_topic[128];
+extern char mqtt_client_id[64];
+
+extern char pub_msg[25 * 1024];
+
+extern void print_memory_status(char *tag);
 
 #endif

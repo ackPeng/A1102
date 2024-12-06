@@ -53,5 +53,4 @@
 #define TAG "SenseCAP A1102"
 
 
-
 #endif // !MAIN_H
