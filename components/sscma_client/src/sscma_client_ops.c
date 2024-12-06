@@ -169,7 +169,6 @@ static void sscma_client_monitor(void *arg)
         if (client->on_connect)
         {
             cJSON *name = cJSON_GetObjectItem(reply.payload, "name");
-            //printf("0 strnstr\r\n");
             if (name != NULL && strnstr(name->valuestring, EVENT_INIT, strlen(name->valuestring)) != NULL)
             {
                 client->on_connect(client, &reply, client->user_ctx);
@@ -256,10 +255,9 @@ static void sscma_client_process(void *arg)
 
 
             client->rx_buffer.data[client->rx_buffer.pos] = 0;
-            //printf("1 strnstr\r\n");
             while ((suffix = strnstr(client->rx_buffer.data, RESPONSE_SUFFIX, client->rx_buffer.pos)) != NULL)
             {
-               //printf("2 strnstr\r\n");
+              
                 if ((prefix = strnstr(client->rx_buffer.data, RESPONSE_PREFIX, suffix - client->rx_buffer.data)) != NULL)
                 {
                     //printf("2 strnstr ok\r\n");
@@ -292,7 +290,7 @@ static void sscma_client_process(void *arg)
 
                             if (client->on_connect)
                             {
-                                //printf("3 strnstr\r\n");
+                               
                                 if (name != NULL && strnstr(name->valuestring, EVENT_INIT, strlen(name->valuestring)) != NULL)
                                 {
                                     xQueueReset(client->reply_queue); // reset reply queue
@@ -364,7 +362,7 @@ static void sscma_client_process(void *arg)
                                         do
                                         {
                                             listGET_OWNER_OF_NEXT_ENTRY(next_req, client->request_list);
-                                            printf("4 strnstr\r\n");
+                                            
                                             if (strnstr(data->valuestring, next_req->cmd, strlen(data->valuestring)) != NULL)
                                             {
                                                 if (next_req->reply)
@@ -408,7 +406,7 @@ static void sscma_client_process(void *arg)
                                     do
                                     {
                                         listGET_OWNER_OF_NEXT_ENTRY(next_req, client->request_list);
-                                        //printf("5 strnstr\r\n");
+            
                                         if (strnstr(next_req->cmd, CMD_AT_BREAK, strlen(next_req->cmd)) != NULL)
                                         {
                                             found = true;
