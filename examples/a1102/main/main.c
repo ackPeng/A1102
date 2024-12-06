@@ -1,10 +1,5 @@
 #include "main.h"
 
-
-
-
-
-// 函数：打印 ClassData 的内容
 void print_class_data(const ClassData *data) {
     printf("Class Count: %d\n", data->class_count);
     for (int i = 0; i < data->class_count; i++) {
@@ -15,10 +10,6 @@ void print_class_data(const ClassData *data) {
 }
 
 
-
-
-
-// 事件处理器
 static void param_change_event_handler(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data) {
     if (base != PARAM_CHANGE_EVENT_BASE) return;
 
@@ -86,34 +77,30 @@ static void param_change_event_handler(void *handler_arg, esp_event_base_t base,
 }
 
 
-// 链接脚本中定义的段地址符号
-extern int _data_start, _data_end;  // 数据段
-extern int _bss_start, _bss_end;    // BSS 段
-extern int _text_start, _text_end;  // 代码段
+
+extern int _data_start, _data_end;  // data
+extern int _bss_start, _bss_end;    // BSS 
+extern int _text_start, _text_end;  // code
 
 void print_memory_usage() {
-    // 数据段
-    size_t data_size = (size_t)&_data_end - (size_t)&_data_start;  // 数据段大小
-    size_t total_data_size = 1024;  // 假设总数据段大小为 8KB（可以根据芯片具体值调整）
+
+    size_t data_size = (size_t)&_data_end - (size_t)&_data_start;  
+    size_t total_data_size = 1024; 
     float data_usage = (float)data_size / total_data_size * 100.0;
 
-    // BSS 段
-    size_t bss_size = (size_t)&_bss_end - (size_t)&_bss_start;     // BSS 段大小
-    size_t total_bss_size = 1024;  // 假设总 BSS 段大小为 8KB
+    size_t bss_size = (size_t)&_bss_end - (size_t)&_bss_start;   
+    size_t total_bss_size = 1024;  
     float bss_usage = (float)bss_size / total_bss_size * 100.0;
 
-    // 代码段
-    size_t text_size = (size_t)&_text_end - (size_t)&_text_start;  // 代码段大小
-    size_t total_text_size = 1024;  // 假设总代码段大小为 128KB
+    size_t text_size = (size_t)&_text_end - (size_t)&_text_start; 
+    size_t total_text_size = 1024;  
     float text_usage = (float)text_size / total_text_size * 100.0;
 
-    // 堆内存
-    size_t total_heap = heap_caps_get_total_size(MALLOC_CAP_DEFAULT);  // 总堆内存
-    size_t free_heap = esp_get_free_heap_size();                       // 剩余堆内存
-    size_t used_heap = total_heap - free_heap;                         // 已用堆内存
+    size_t total_heap = heap_caps_get_total_size(MALLOC_CAP_DEFAULT); 
+    size_t free_heap = esp_get_free_heap_size();                      
+    size_t used_heap = total_heap - free_heap;                         
     float heap_usage = (float)used_heap / total_heap * 100.0;
 
-    // 打印段信息
     ESP_LOGI("MEMORY", "================== Memory Usage ==================");
     ESP_LOGI("MEMORY", "Code (.text)    : %7.2f%% Used, %8zu B / %8zu B", text_usage, text_size, total_text_size);
     ESP_LOGI("MEMORY", "Data (.data)    : %7.2f%% Used, %8zu B / %8zu B", data_usage, data_size, total_data_size);
@@ -130,11 +117,11 @@ void app_main(void)
     app_nvs_init();
 
     esp_event_loop_args_t loop_args = {
-        .queue_size = 10,               // 事件队列大小
-        .task_name = "change_param_event_task", // 事件任务名称
-        .task_priority = uxTaskPriorityGet(NULL) + 1, // 优先级比当前任务高
-        .task_stack_size = 2048,        // 任务堆栈大小
-        .task_core_id = tskNO_AFFINITY, // 不绑定特定核心
+        .queue_size = 10,               
+        .task_name = "change_param_event_task",
+        .task_priority = uxTaskPriorityGet(NULL) + 1, 
+        .task_stack_size = 2048,     
+        .task_core_id = tskNO_AFFINITY, 
     };
 
     
@@ -152,7 +139,6 @@ void app_main(void)
         // ESP_LOGI(TAG, "wait !!");
         vTaskDelay(pdMS_TO_TICKS(2000));
 
-        /* code */
     }
     
    

@@ -108,21 +108,14 @@ static int read_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         /* Verify attribute handle */
         if (attr_handle == read_param_chr_val_handle) {
  
-        
-
-       
-            
-            // 创建 JSON 对象
             cJSON *json = cJSON_CreateObject();
 
-            // 添加字段并赋值
             cJSON_AddNumberToObject(json, "baudrate", g_a1102_param.modbus_p.modbus_baud);
             cJSON_AddNumberToObject(json, "slaveID", g_a1102_param.modbus_p.modbus_address);
             cJSON_AddStringToObject(json, "model", model_to_string(g_a1102_param.modle_p.current_modle));
             // cJSON_AddNumberToObject(json, "confidence", g_a1102_param.modle_p.modle_confidence);
-            // 转换 JSON 对象为字符串
+
             char *json_string = cJSON_Print(json);
-            // 打印 JSON 字符串
             printf("Generated JSON: \n%s\n", json_string);
 
             rc = os_mbuf_append(ctxt->om, json_string,
@@ -130,7 +123,6 @@ static int read_chr_access(uint16_t conn_handle, uint16_t attr_handle,
 
             free(json);
             free(json_string);
-
 
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
@@ -258,8 +250,6 @@ void send_heart_rate_indication(void) {
 
 void send_heart_rate_notify(void){
     int rc;
-
-    // 发送通知
     rc = ble_gatts_notify(read_param_chr_conn_handle, read_param_chr_val_handle);
     if (rc != 0) {
         printf("Failed to send notification: %d\n", rc);
@@ -275,31 +265,6 @@ int gap_init(void) {
 
     /* Call NimBLE GAP initialization API */
     ble_svc_gap_init();
-
-    // char name[40];
-    // char *sn = get_SN(1);
-    // if (sn != NULL)
-    // {
-    //     strcpy(name, sn);
-    //     ESP_LOGI(TAG, "SN name =  %s,len = %d",name,strlen(name));
-    //     strcat(name, "-A1102");
-    //     ESP_LOGI(TAG, "NEW  name =  %s,len = %d",name,strlen(name));
-    //     free(sn);
-    // }else{
-    //     strcpy(name, "Default");
-    //     ESP_LOGI(TAG, "SN name =  %s,len = %d",name,strlen(name));
-    //     strcat(name, "-A1102");
-    //     ESP_LOGI(TAG, "NEW  name =  %s,len = %d",name,strlen(name));
-    // }
-    
-
-    // /* Set GAP device name */
-    // rc = ble_svc_gap_device_name_set(name);
-    // if (rc != 0) {
-    //     ESP_LOGE(TAG, "failed to set device name to %s, error code: %d",
-    //              sn, rc);
-    //     return rc;
-    // }
     return rc;
 }
 
@@ -723,14 +688,6 @@ void app_ble_init(){
 
 
     nimble_port_freertos_init(__bleprph_host_task);
-
-    // //create a side task to monitor the ble switch
-    // const uint32_t stack_size = 10 * 1024;
-    // StackType_t *task_stack1 = (StackType_t *)psram_calloc(1, stack_size * sizeof(StackType_t));
-    // StaticTask_t *task_tcb1 = heap_caps_calloc(1, sizeof(StaticTask_t), MALLOC_CAP_INTERNAL);
-    // xTaskCreateStatic(__ble_monitor_task, "app_ble_monitor", stack_size, NULL, 4, task_stack1, task_tcb1);
-
-
 }
 
 

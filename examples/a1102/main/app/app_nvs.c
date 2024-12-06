@@ -100,12 +100,12 @@ char* get_SN(bool type)
         strcpy(nvs_key, NVS_KEY_DEVICE_SN); 
     }
 
-    // 读取字符串
+  
     size_t required_size;
     err = nvs_get_str(nvs_handle, nvs_key, NULL, &required_size);
     if (err == ESP_OK) {
-        // 动态分配内存来存储字符串
-        char *buffer = (char *)malloc(required_size);  // 使用 malloc 分配内存
+ 
+        char *buffer = (char *)malloc(required_size); 
         if (buffer == NULL) {
             ESP_LOGE("NVS", "Failed to allocate memory for SN");
             nvs_close(nvs_handle);
@@ -117,13 +117,13 @@ char* get_SN(bool type)
             ESP_LOGI("NVS", "Read string: %s", buffer);
         } else {
             ESP_LOGE("NVS", "Failed to read string from NVS");
-            free(buffer);  // 释放内存
+            free(buffer);  
             nvs_close(nvs_handle);
             return NULL;
         }
 
         nvs_close(nvs_handle);
-        return buffer;  // 返回动态分配的字符串
+        return buffer;  
     } else {
         ESP_LOGE("NVS", "Failed to get string size from NVS");
         nvs_close(nvs_handle);

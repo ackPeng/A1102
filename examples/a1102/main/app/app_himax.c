@@ -44,13 +44,12 @@ void himax_data_inference_free(struct himax_data_inference_info *p_inference)
 
 void extract_numbers_and_check_save_jpeg(const char *input)
 {
-    // 正则表达式匹配 ">=数字"
+  
     regex_t regex;
     regmatch_t matches[2];
-    const char *pattern = ">=([0-9]+)"; // 匹配 ">=数字" 形式的子串
+    const char *pattern = ">=([0-9]+)"; 
     int ret;
 
-    // 编译正则表达式
     ret = regcomp(&regex, pattern, REG_EXTENDED);
     if (ret)
     {
@@ -58,20 +57,19 @@ void extract_numbers_and_check_save_jpeg(const char *input)
         return;
     }
 
-    // 使用 regexec 查找匹配
     const char *cursor = input;
     int number_found = 0;
     int i = 0;
     while ((ret = regexec(&regex, cursor, 2, matches, 0)) == 0)
     {
-        // 提取匹配的数字
+
         int match_len = matches[1].rm_eo - matches[1].rm_so;
         char number[match_len + 1];
         strncpy(number, cursor + matches[1].rm_so, match_len);
-        number[match_len] = '\0'; // 添加字符串终止符
+        number[match_len] = '\0';
         printf("Found number: %s\n", number);
         g_a1102_param.modle_p.confidence[i++] = atoi(number);
-        cursor += matches[0].rm_eo; // 移动游标到下一个可能的匹配位置
+        cursor += matches[0].rm_eo; 
         number_found = 1;
     }
 
@@ -80,7 +78,7 @@ void extract_numbers_and_check_save_jpeg(const char *input)
         printf("No numbers found in the string\n");
     }
 
-    // 查找是否包含 save_jpeg
+
     if (strstr(input, "save_jpeg") != NULL)
     {
         printf("The string contains 'save_jpeg'\n");
@@ -93,30 +91,29 @@ void extract_numbers_and_check_save_jpeg(const char *input)
         g_a1102_param.modle_p.save_pic_flage = false;
     }
 
-    // 清理正则表达式
+
     regfree(&regex);
 }
 
 int find_data_position_in_first_json(cJSON *first_json, cJSON *second_json) {
-    // 获取 second_json 中的 "data" 字段
+
     cJSON *second_data = cJSON_GetObjectItem(second_json, "data");
     if (second_data == NULL) {
         printf("No 'data' found in second JSON.\n");
         return -1;
     }
 
-    // 获取 first_json 中的 "data" 数组
     cJSON *data_array = cJSON_GetObjectItem(first_json, "data");
     if (data_array == NULL) {
         printf("No 'data' array found in first JSON.\n");
         return -1;
     }
 
-    int data_count = cJSON_GetArraySize(data_array); // 获取 data 数组的大小
+    int data_count = cJSON_GetArraySize(data_array); 
     for (int i = 0; i < data_count; i++) {
-        cJSON *item = cJSON_GetArrayItem(data_array, i); // 获取每一项
+        cJSON *item = cJSON_GetArrayItem(data_array, i);
         if (item != NULL) {
-            // 获取 second_json 中的各个字段
+  
             cJSON *id_item = cJSON_GetObjectItem(item, "id");
             cJSON *id_second = cJSON_GetObjectItem(second_data, "id");
 
@@ -129,19 +126,19 @@ int find_data_position_in_first_json(cJSON *first_json, cJSON *second_json) {
             cJSON *size_item = cJSON_GetObjectItem(item, "size");
             cJSON *size_second = cJSON_GetObjectItem(second_data, "size");
 
-            // 如果字段匹配，则返回位置（从后往前编号）
+    
             if (id_item && type_item && address_item && size_item &&
                 id_item->valueint == id_second->valueint &&
                 type_item->valueint == type_second->valueint &&
                 address_item->valueint == address_second->valueint &&
                 size_item->valueint == size_second->valueint) {
-                return data_count - i; // 返回从后往前的编号
+                return data_count - i; 
             }
         }
     }
 
     printf("Data not found in first JSON.\n");
-    return -1; // 没有找到匹配的项
+    return -1; 
 }
 
 
@@ -591,11 +588,11 @@ void on_connect(sscma_client_handle_t client, const sscma_client_reply_t *reply,
                     printf("Failed to convert 'data' to string.\n");
                 }
 
-                // 获取 "action" 字段
+              
                 cJSON *action = cJSON_GetObjectItem(data, "action");
                 if (action != NULL && cJSON_IsString(action))
                 {
-                    // 打印 "action" 字段的内容
+                   
                     printf("Action: %s\n", action->valuestring);
                     extract_numbers_and_check_save_jpeg(action->valuestring);
                 }

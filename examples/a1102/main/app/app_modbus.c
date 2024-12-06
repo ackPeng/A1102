@@ -91,7 +91,7 @@ void set_up_modbus(uint16_t new_slava_id,uint16_t new_baudrate){
             device_version --------> 2
             device_id -------------> 0X8000 ----> 32768
             modle_id --------------> 0X8002 ----> 32770
-            result 0~9 ------------> 0x1000 ~ 0x1010 ----> 4096 ~ 4112
+            result 0~9 ------------> 0x1000 ~ 0x1020 
             Coordinate information xy  -----> 0x2000 ~0x2000 + 9
             Coordinate information wh  -----> 0x3000 ~ 0x3000 + 9
             picture length：0X8006 
@@ -249,8 +249,6 @@ void modbus_task(void *pvParameter){
                             }
 
                             // Transfer pictures
-
-
                             if (reg_info.mb_offset == 0x8002)
                             {
                                 if (xSemaphoreTake(img_memory_lock, portMAX_DELAY) == pdTRUE){

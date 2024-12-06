@@ -308,18 +308,12 @@ at_cmd_error_code handle_deviceinfo_command(char *params)
     
     cJSON *classes_array = cJSON_CreateArray();
     for (int i = 0; i < g_a1102_param.modle_p.classes_count; i++) {
-        // 创建每个类的 JSON 对象
         cJSON *class_obj = cJSON_CreateObject();
-
-        // 将 class 和 conf 添加到对象中
         cJSON_AddStringToObject(class_obj, "class", g_a1102_param.modle_p.classes[i]);
         cJSON_AddNumberToObject(class_obj, "conf", g_a1102_param.modle_p.confidence[i]);
-
-        // 将该对象添加到 classes_array 数组中
         cJSON_AddItemToArray(classes_array, class_obj);
     }
 
-    // 将 classes_array 添加到 data 对象中
     cJSON_AddItemToObject(data, "classes", classes_array);
     
     char *json_string = cJSON_Print(root);
@@ -537,8 +531,6 @@ at_cmd_error_code handle_classconfidence(char *params){
         return -1;
     }
 
-
-    // 获取 "save" 字段
     cJSON *code_item = cJSON_GetObjectItem(root, "save");
     if (code_item == NULL) {
         printf("Error: 'code' field not found in the JSON\n");
@@ -546,9 +538,8 @@ at_cmd_error_code handle_classconfidence(char *params){
         return -1;
     }
 
-    // 判断 "save" 字段是否为 0
     if (cJSON_IsNumber(code_item)) {
-        int code_value = code_item->valueint; // 获取 "save" 字段的整数值
+        int code_value = code_item->valueint;
         if (code_value == 0) {
             event_data.save_pic_flage = false;
         } else {
@@ -641,21 +632,17 @@ at_cmd_error_code handle_preview_command(char *params) {
     ESP_LOGI(TAG, "wait himax img give xSemaphore\n");
     if (xSemaphoreTake(xSemaphore, portMAX_DELAY) == pdTRUE) {
 
-        vTaskDelay(1000);//等待内存释放完
-        // 创建 JSON 根对象
+        vTaskDelay(1000);//Wait for memory to be released
         cJSON *root = cJSON_CreateObject();
         if (root == NULL) {
-            xSemaphoreGive(xSemaphore); // 确保信号量释放
+            xSemaphoreGive(xSemaphore); 
             xSemaphoreGive(img_memory_lock);
             return ERROR_CMD_JSON_CREATE;
         }
 
-
-        // 添加 "name" 和 "code" 键
         cJSON_AddStringToObject(root, "name", "preview");
         cJSON_AddNumberToObject(root, "code", 0);
 
-        // 创建 "data" 对象
         cJSON *data_object = cJSON_CreateObject();
         if (data_object == NULL) {
             cJSON_Delete(root);
@@ -664,7 +651,6 @@ at_cmd_error_code handle_preview_command(char *params) {
             return ERROR_CMD_JSON_CREATE;
         }
      
-        // 创建 result 数组
         cJSON *result_array = cJSON_CreateArray();
         if (result_array == NULL) {
             cJSON_Delete(data_object);
@@ -674,7 +660,6 @@ at_cmd_error_code handle_preview_command(char *params) {
             return ERROR_CMD_JSON_CREATE;
         }
   
-        // 添加 result 数据
         portENTER_CRITICAL(&param_lock);
         for (int i = 0; i < 10; i++) {
             cJSON *value = cJSON_CreateNumber(mb_get_uint32_abcd((val_32_arr *)&a1102_msg.result[i]));
@@ -692,7 +677,6 @@ at_cmd_error_code handle_preview_command(char *params) {
         portEXIT_CRITICAL(&param_lock);
         cJSON_AddItemToObject(data_object, "result", result_array);
 
-        // 检查 image_string 的合法性
         modbus_image.image[modbus_image.image_size] = '\0';
         char *image_string = (char *)modbus_image.image;
                     // ESP_LOGI(TAG, "modbus_image.image = %s\r\n", image_string);
@@ -707,11 +691,8 @@ at_cmd_error_code handle_preview_command(char *params) {
         }
 
         
-
-        // 添加 "data" 对象到根对象
         cJSON_AddItemToObject(root, "data", data_object);
 
-        // 转换为 JSON 字符串
         char *json_string = cJSON_Print(root);
         if (json_string == NULL) {
             ESP_LOGE(TAG, "Failed to get json_string");
@@ -722,12 +703,11 @@ at_cmd_error_code handle_preview_command(char *params) {
         }
         xSemaphoreGive(img_memory_lock);
         atomic_store(&img_memory_lock_owner, 0);
-        // 输出和发送 JSON 字符串
         ESP_LOGI(TAG, "Free heap size: %ld", esp_get_free_heap_size());
         // printf("handle_preview_command json: %s\r\n", json_string);
         esp_err_t send_result = send_at_response(json_string);
-        free(json_string); // 释放 JSON 字符串
-        cJSON_Delete(root); // 删除 JSON 对象
+        free(json_string); 
+        cJSON_Delete(root); 
 
         if (send_result != ESP_OK) {
             ESP_LOGE(TAG, "Failed to send AT response");
@@ -777,14 +757,12 @@ at_cmd_error_code handle_reset_command(char *params) {
 
 at_cmd_error_code handle_set_ble_sn_name_command(char *params){
 
-    // 解析 JSON 字符串
     cJSON *root = cJSON_Parse(params);
     if (root == NULL) {
         printf("Failed to parse JSON\n");
         return -1;
     }
 
-    // 获取 "DSN" 的值
     cJSON *dsn_item = cJSON_GetObjectItem(root, "DSN");
     if (dsn_item != NULL && cJSON_IsString(dsn_item)) {
         printf("DSN: %s\n", dsn_item->valuestring);
@@ -797,7 +775,7 @@ at_cmd_error_code handle_set_ble_sn_name_command(char *params){
     } else {
         printf("Failed to get 'DSN' value or it is not a string\n");
     }
-    // 释放 JSON 对象
+
     cJSON_Delete(root);
 
 
